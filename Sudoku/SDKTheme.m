@@ -31,6 +31,30 @@
 
 #pragma mark - Fonts
 
+#pragma mark - Mascots
+
++ (nullable UIImage *)mascotForDifficulty:(NSInteger)difficulty {
+    NSString *name = nil;
+    switch (difficulty) {
+        case 0: name = @"MascotEasy"; break;
+        case 1: name = @"MascotMedium"; break;
+        default: name = @"MascotHard"; break;
+    }
+    return [UIImage imageNamed:name];
+}
+
++ (nullable UIImage *)mascotSleepy {
+    return [UIImage imageNamed:@"MascotSleepy"];
+}
+
++ (UIColor *)mascotTintForDifficulty:(NSInteger)difficulty {
+    switch (difficulty) {
+        case 0: return [UIColor colorWithRed:0.902 green:0.953 blue:0.918 alpha:1.0];  // 薄荷
+        case 1: return [UIColor colorWithRed:0.984 green:0.929 blue:0.886 alpha:1.0];  // 杏
+        default: return [UIColor colorWithRed:0.929 green:0.906 blue:0.965 alpha:1.0]; // 薰衣草
+    }
+}
+
 + (UIFont *)digitsFontOfSize:(CGFloat)size weight:(UIFontWeight)weight {
     return [UIFont monospacedDigitSystemFontOfSize:size weight:weight];
 }

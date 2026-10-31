@@ -35,9 +35,23 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Records a game in the history list (and therefore in the statistics).
 - (void)recordGame:(SDKGameState *)game;
+
+/// 把一局未完成的进度存进历史，之后可以从历史里接着玩。
+/// 只保留最近若干局未完成的，避免存档无限膨胀。
+- (void)archiveUnfinishedGame:(SDKGameState *)game;
+
+/// 取回某条历史里未完成的对局（没有则为 nil）。
+- (nullable SDKGameState *)gameForHistoryTimestamp:(NSTimeInterval)timestamp;
+
+/// 未完成且可续玩的对局数量。
+- (NSInteger)resumableCount;
 - (NSArray<NSDictionary *> *)history;
 - (void)clearHistory;
 - (void)deleteHistoryEntryWithDate:(NSTimeInterval)timestamp;
+
+/// 记录的唯一 id（时间戳精确到毫秒也可能撞车，续玩/删除都按 id 认人）
+- (nullable SDKGameState *)gameForHistoryIdentifier:(NSString *)identifier;
+- (void)deleteHistoryEntryWithIdentifier:(NSString *)identifier;
 
 #pragma mark - Statistics
 

@@ -157,8 +157,9 @@ typedef NS_ENUM(NSInteger, SDKHomeRowKind) {
                                          [SDKTheme timeString:game.elapsedSeconds],
                                          (long)[game filledCount]];
             }
-            content.image = [UIImage systemImageNamed:@"play.circle.fill"];
-            content.imageProperties.tintColor = [UIColor systemBlueColor];
+            content.image = [SDKTheme mascotForDifficulty:(NSInteger)(game ? game.difficulty : 0)];
+            content.imageProperties.maximumSize = CGSizeMake(30.0, 30.0);
+            content.imageProperties.cornerRadius = 15.0;
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             break;
         }
@@ -176,9 +177,9 @@ typedef NS_ENUM(NSInteger, SDKHomeRowKind) {
             } else {
                 content.secondaryText = @"还没玩过，开始第一局";
             }
-            content.image = [UIImage systemImageNamed:@"circle.fill"];
-            content.imageProperties.tintColor = [SDKTheme colorForDifficulty:row.difficulty];
-            content.imageProperties.maximumSize = CGSizeMake(12, 12);
+            content.image = [SDKTheme mascotForDifficulty:(NSInteger)row.difficulty];
+            content.imageProperties.maximumSize = CGSizeMake(30.0, 30.0);
+            content.imageProperties.cornerRadius = 15.0;
             cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
             break;
         }
@@ -230,7 +231,7 @@ typedef NS_ENUM(NSInteger, SDKHomeRowKind) {
 - (void)archiveCurrentGameIfNeeded {
     SDKGameState *current = [[SDKStore shared] currentGame];
     if (current && !current.finished && [self hasUserProgress:current]) {
-        [[SDKStore shared] recordGame:current];
+        [[SDKStore shared] archiveUnfinishedGame:current];
     }
     [[SDKStore shared] saveCurrentGame:nil];
 }

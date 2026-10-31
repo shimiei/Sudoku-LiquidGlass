@@ -17,6 +17,7 @@ static NSString * const kSDKKeyCurrentGame     = @"sdk.currentGame";
 static NSString * const kSDKKeyHistory         = @"sdk.history";
 
 static const NSInteger kSDKHistoryLimit = 200;
+static const NSInteger kSDKUnfinishedLimit = 12;
 
 @interface SDKStore ()
 - (BOOL)readBool:(NSString *)key;
@@ -131,6 +132,7 @@ static const NSInteger kSDKHistoryLimit = 200;
     if (!game) return;
     NSMutableArray *list = [[self rawHistory] mutableCopy];
     NSDictionary *entry = @{
+        @"id": [[NSUUID UUID] UUIDString],
         @"date": @([[NSDate date] timeIntervalSince1970]),
         @"difficulty": @(game.difficulty),
         @"seconds": @(game.elapsedSeconds),
@@ -142,6 +144,78 @@ static const NSInteger kSDKHistoryLimit = 200;
     [list insertObject:entry atIndex:0];
     while (list.count > (NSUInteger)kSDKHistoryLimit) [list removeLastObject];
     [self setJSONObject:list forKey:kSDKKeyHistory];
+}
+
+/// 未完成的对局连同完整状态一起入历史，才能「接着玩」。
+- (void)archiveUnfinishedGame:(SDKGameState *)game {
+    if (!game || game.finished) return;
+
+    NSDictionary *entry = @{
+        @"id": [[NSUUID UUID] UUIDString],
+        @"date": @([[NSDate date] timeIntervalSince1970]),
+        @"difficulty": @(game.difficulty),
+        @"seconds": @(game.elapsedSeconds),
+        @"mistakes": @(game.mistakes),
+        @"hints": @(game.hintsUsed),
+        @"completed": @NO,
+        @"progress": @(game.progress),
+        @"game": [game dictionaryRepresentation]
+    };
+
+    NSMutableArray *list = [[self rawHistory] mutableCopy];
+    [list insertObject:entry atIndex:0];
+
+    // 只留最近 kSDKUnfinishedLimit 局未完成的
+    NSInteger seenUnfinished = 0;
+    NSMutableArray *trimmed = [NSMutableArray array];
+    for (NSDictionary *e in list) {
+        BOOL resumable = ([e[@"game"] isKindOfClass:[NSDictionary class]] && ![e[@"completed"] boolValue]);
+        if (resumable) {
+            seenUnfinished += 1;
+            if (seenUnfinished > kSDKUnfinishedLimit) continue;
+        }
+        [trimmed addObject:e];
+    }
+    while (trimmed.count > (NSUInteger)kSDKHistoryLimit) [trimmed removeLastObject];
+    [self setJSONObject:trimmed forKey:kSDKKeyHistory];
+}
+
+- (nullable SDKGameState *)gameForHistoryTimestamp:(NSTimeInterval)timestamp {
+    for (NSDictionary *e in [self rawHistory]) {
+        if (fabs([e[@"date"] doubleValue] - timestamp) > 0.5) continue;
+        NSDictionary *dict = e[@"game"];
+        if (![dict isKindOfClass:[NSDictionary class]]) return nil;
+        return [SDKGameState gameFromDictionary:dict];
+    }
+    return nil;
+}
+
+- (nullable SDKGameState *)gameForHistoryIdentifier:(NSString *)identifier {
+    if (identifier.length == 0) return nil;
+    for (NSDictionary *e in [self rawHistory]) {
+        if (![e[@"id"] isEqual:identifier]) continue;
+        NSDictionary *dict = e[@"game"];
+        if (![dict isKindOfClass:[NSDictionary class]]) return nil;
+        return [SDKGameState gameFromDictionary:dict];
+    }
+    return nil;
+}
+
+- (void)deleteHistoryEntryWithIdentifier:(NSString *)identifier {
+    if (identifier.length == 0) return;
+    NSMutableArray *keep = [NSMutableArray array];
+    for (NSDictionary *e in [self rawHistory]) {
+        if (![e[@"id"] isEqual:identifier]) [keep addObject:e];
+    }
+    [self setJSONObject:keep forKey:kSDKKeyHistory];
+}
+
+- (NSInteger)resumableCount {
+    NSInteger count = 0;
+    for (NSDictionary *e in [self rawHistory]) {
+        if ([e[@"game"] isKindOfClass:[NSDictionary class]] && ![e[@"completed"] boolValue]) count += 1;
+    }
+    return count;
 }
 
 - (NSArray<NSDictionary *> *)rawHistory {
@@ -162,10 +236,16 @@ static const NSInteger kSDKHistoryLimit = 200;
     [self setJSONObject:nil forKey:kSDKKeyHistory];
 }
 
+/// 旧接口：只删「最接近的那一条」，不再把 0.5 秒内的记录一起清掉。
 - (void)deleteHistoryEntryWithDate:(NSTimeInterval)timestamp {
     NSMutableArray *keep = [NSMutableArray array];
+    BOOL removed = NO;
     for (NSDictionary *e in [self rawHistory]) {
-        if (fabs([e[@"date"] doubleValue] - timestamp) > 0.5) [keep addObject:e];
+        if (!removed && fabs([e[@"date"] doubleValue] - timestamp) <= 0.5) {
+            removed = YES;
+            continue;
+        }
+        [keep addObject:e];
     }
     [self setJSONObject:keep forKey:kSDKKeyHistory];
 }
@@ -181,10 +261,10 @@ static const NSInteger kSDKHistoryLimit = 200;
         if ([e[@"difficulty"] integerValue] != difficulty) continue;
         played += 1;
         NSInteger seconds = [e[@"seconds"] integerValue];
-        totalSeconds += seconds;
         totalMistakes += [e[@"mistakes"] integerValue];
         if ([e[@"completed"] boolValue]) {
             completed += 1;
+            totalSeconds += seconds;
             if (best == 0 || (seconds > 0 && seconds < best)) best = seconds;
         }
     }
@@ -193,7 +273,8 @@ static const NSInteger kSDKHistoryLimit = 200;
         @"played": @(played),
         @"completed": @(completed),
         @"best": @(best),
-        @"average": @(played > 0 ? (NSInteger)lround(totalSeconds / played) : 0),
+        // 平均用时只统计完成的局，未完成的存档不该拉低它
+        @"average": @(completed > 0 ? (NSInteger)lround(totalSeconds / completed) : 0),
         @"mistakes": @(totalMistakes)
     };
 }
@@ -208,11 +289,11 @@ static const NSInteger kSDKHistoryLimit = 200;
 
     for (NSDictionary *e in history) {
         NSInteger seconds = [e[@"seconds"] integerValue];
-        totalSeconds += seconds;
         totalMistakes += [e[@"mistakes"] integerValue];
         totalHints += [e[@"hints"] integerValue];
         if ([e[@"completed"] boolValue]) {
             completed += 1;
+            totalSeconds += seconds;   // 未完成的存档不进平均，否则会把用时拉低
             if (best == 0 || (seconds > 0 && seconds < best)) best = seconds;
         }
     }
@@ -221,7 +302,7 @@ static const NSInteger kSDKHistoryLimit = 200;
         @"played": @(played),
         @"completed": @(completed),
         @"best": @(best),
-        @"average": @(played > 0 ? (NSInteger)lround(totalSeconds / played) : 0),
+        @"average": @(completed > 0 ? (NSInteger)lround(totalSeconds / completed) : 0),
         @"mistakes": @(totalMistakes),
         @"hints": @(totalHints),
         @"winRate": @(played > 0 ? (double)completed / (double)played : 0.0)

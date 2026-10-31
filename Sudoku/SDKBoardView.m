@@ -52,6 +52,58 @@
     [self.layer addSublayer:_selectionRing];
 }
 
+- (void)pulseAtIndex:(NSInteger)index color:(UIColor *)color {
+    if (index < 0 || index > 80 || !color) return;
+    CGRect cell = [self rectForIndex:index];
+    if (CGRectGetWidth(cell) < 8.0) return;
+
+    CAShapeLayer *ring = [CAShapeLayer layer];
+    ring.frame = cell;
+    CGRect local = CGRectInset(CGRectMake(0, 0, CGRectGetWidth(cell), CGRectGetHeight(cell)), 1.5, 1.5);
+    ring.path = [UIBezierPath bezierPathWithRoundedRect:local cornerRadius:7.0].CGPath;
+    ring.fillColor = UIColor.clearColor.CGColor;
+    ring.strokeColor = [SDKTheme cgColor:color traits:self.traitCollection];
+    ring.lineWidth = 2.0;
+    ring.opacity = 0.0;
+    [self.layer addSublayer:ring];
+
+    CABasicAnimation *scale = [CABasicAnimation animationWithKeyPath:@"transform.scale"];
+    scale.fromValue = @0.70;
+    scale.toValue = @1.30;
+
+    CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
+    fade.fromValue = @0.95;
+    fade.toValue = @0.0;
+
+    CAAnimationGroup *group = [CAAnimationGroup animation];
+    group.animations = @[ scale, fade ];
+    group.duration = 0.55;
+    group.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
+    [ring addAnimation:group forKey:@"pulse"];
+
+    __weak typeof(ring) weakRing = ring;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.6 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        [weakRing removeFromSuperlayer];
+    });
+}
+
+- (void)playCompletionWave {
+    if (UIAccessibilityIsReduceMotionEnabled()) {
+        [self pulseAtIndex:self.selectedIndex >= 0 ? self.selectedIndex : 40 color:[SDKTheme userColor]];
+        return;
+    }
+    for (NSInteger i = 0; i < 81; i++) {
+        NSInteger row = i / 9, col = i % 9;
+        NSTimeInterval delay = 0.018 * (NSTimeInterval)(row + col);
+        __weak typeof(self) weakSelf = self;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [weakSelf pulseAtIndex:i color:[SDKTheme userColor]];
+        });
+    }
+}
+
 - (void)useGlassPanel:(BOOL)glass {
     if (glass) {
         self.backgroundColor = UIColor.clearColor;

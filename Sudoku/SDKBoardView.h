@@ -37,6 +37,11 @@ NS_ASSUME_NONNULL_BEGIN
 /// 玻璃面板垫在下面时，棋盘自己不再画卡片底色和描边。
 - (void)useGlassPanel:(BOOL)glass;
 
+/// 落子反馈：在格子上扩散一圈渐隐的涟漪。
+- (void)pulseAtIndex:(NSInteger)index color:(UIColor *)color;
+/// 通关：从左上到右下逐格荡开一圈涟漪。
+- (void)playCompletionWave;
+
 - (CGFloat)cellSize;
 - (CGRect)gridRect;                              // the 9×9 square inside the card
 - (CGRect)rectForIndex:(NSInteger)index;

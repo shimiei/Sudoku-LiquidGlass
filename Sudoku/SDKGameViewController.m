@@ -8,6 +8,7 @@
 
 #import "SDKGameViewController.h"
 #import "SDKBoardView.h"
+#import "SDKCompletionOverlay.h"
 #import "SDKBackdropView.h"
 #import "SDKMaterial.h"
 #import "SDKLoupeView.h"
@@ -24,6 +25,19 @@
 @property (nonatomic, strong) UILabel *statusLabel;
 
 @property (nonatomic, copy) NSArray<UIButton *> *numberButtons;
+@property (nonatomic, copy) NSArray<UIButton *> *actionButtons;
+
+@property (nonatomic, strong) UIView *boardContainer;
+@property (nonatomic, strong) UIStackView *actionRow;
+@property (nonatomic, strong) UIStackView *numberRow;
+@property (nonatomic, strong) UIStackView *controlsCompact;
+@property (nonatomic, strong) UIStackView *controlsWide;
+@property (nonatomic, strong) UIStackView *rootStack;
+@property (nonatomic, strong) NSLayoutConstraint *rootMaxWidth;
+@property (nonatomic, strong) NSLayoutConstraint *controlsWidth;
+@property (nonatomic, strong) NSLayoutConstraint *boardPaneSquare;
+@property (nonatomic) BOOL wideLayout;
+@property (nonatomic) BOOL didApplyLayout;
 @property (nonatomic, strong) UIButton *undoButton;
 @property (nonatomic, strong) UIButton *redoButton;
 @property (nonatomic, strong) UIButton *noteButton;
@@ -147,6 +161,7 @@
 
     UIView *boardContainer = [UIView new];
     boardContainer.translatesAutoresizingMaskIntoConstraints = NO;
+    self.boardContainer = boardContainer;
 
     self.board = [[SDKBoardView alloc] initWithFrame:CGRectZero];
     self.board.translatesAutoresizingMaskIntoConstraints = NO;
@@ -194,12 +209,16 @@
     self.noteButton = actions[3];
     self.hintButton = actions[5];
 
+    self.actionButtons = actions;
     UIStackView *actionRow = [[UIStackView alloc] initWithArrangedSubviews:actions];
     actionRow.axis = UILayoutConstraintAxisHorizontal;
     actionRow.distribution = UIStackViewDistributionFillEqually;
     actionRow.spacing = 8.0;
     actionRow.translatesAutoresizingMaskIntoConstraints = NO;
-    [actionRow.heightAnchor constraintEqualToConstant:52.0].active = YES;
+    self.actionRow = actionRow;
+    for (UIButton *b in actions) {
+        [b.heightAnchor constraintGreaterThanOrEqualToConstant:50.0].active = YES;
+    }
 
     NSMutableArray<UIButton *> *numbers = [NSMutableArray array];
     for (NSInteger digit = 1; digit <= 9; digit++) {
@@ -216,27 +235,140 @@
     numberRow.distribution = UIStackViewDistributionFillEqually;
     numberRow.spacing = 5.0;
     numberRow.translatesAutoresizingMaskIntoConstraints = NO;
-    [numberRow.heightAnchor constraintEqualToConstant:54.0].active = YES;
+    for (UIButton *b in numbers) {
+        [b.heightAnchor constraintGreaterThanOrEqualToConstant:54.0].active = YES;
+    }
+    self.numberRow = numberRow;
 
-    UIStackView *root = [[UIStackView alloc] initWithArrangedSubviews:@[ boardContainer, actionRow, numberRow ]];
+    // 两套控制区容器：竖排（手机 / 分屏）与右栏（iPad 横屏），运行时切换
+    UIStackView *controlsCompact = [[UIStackView alloc] initWithArrangedSubviews:@[ actionRow, numberRow ]];
+    controlsCompact.axis = UILayoutConstraintAxisVertical;
+    controlsCompact.spacing = 14.0;
+    controlsCompact.translatesAutoresizingMaskIntoConstraints = NO;
+    self.controlsCompact = controlsCompact;
+
+    UIStackView *controlsWide = [[UIStackView alloc] init];
+    controlsWide.axis = UILayoutConstraintAxisVertical;
+    controlsWide.spacing = 18.0;
+    controlsWide.translatesAutoresizingMaskIntoConstraints = NO;
+    self.controlsWide = controlsWide;
+
+    UIStackView *root = [[UIStackView alloc] initWithArrangedSubviews:@[ boardContainer, controlsCompact ]];
     root.axis = UILayoutConstraintAxisVertical;
     root.spacing = 14.0;
+    root.alignment = UIStackViewAlignmentFill;
     root.translatesAutoresizingMaskIntoConstraints = NO;
+    self.rootStack = root;
     [boardContainer setContentHuggingPriority:UILayoutPriorityDefaultLow - 1
                                forAxis:UILayoutConstraintAxisVertical];
     [self.view addSubview:root];
 
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
-    // Readable width: fill the screen, but never wider than 520pt on iPad.
     NSLayoutConstraint *fullWidth = [root.widthAnchor constraintEqualToAnchor:safe.widthAnchor constant:-32.0];
     fullWidth.priority = UILayoutPriorityRequired - 1;
+    self.rootMaxWidth = [root.widthAnchor constraintLessThanOrEqualToConstant:520.0];
+    self.controlsWidth = [controlsWide.widthAnchor constraintEqualToConstant:368.0];
+    // 只是观感约束：宽屏时让棋盘面板尽量方，但优先服从安全区宽度
+    self.boardPaneSquare = [boardContainer.widthAnchor constraintEqualToAnchor:boardContainer.heightAnchor];
+    self.boardPaneSquare.priority = 750;
     [NSLayoutConstraint activateConstraints:@[
         [root.topAnchor constraintEqualToAnchor:safe.topAnchor constant:10.0],
         [root.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-12.0],
         [root.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-        [root.widthAnchor constraintLessThanOrEqualToConstant:520.0],
+        self.rootMaxWidth,
         fullWidth,
     ]];
+
+    [self arrangeButtonsForColumns:0];
+}
+
+#pragma mark - Adaptive layout (iPhone / iPad)
+
+/// iPad 横屏（或够宽的 regular 宽度）时，棋盘在左、控制区在右。
+- (BOOL)shouldUseWideLayout {
+    if (self.traitCollection.horizontalSizeClass != UIUserInterfaceSizeClassRegular) return NO;
+    CGSize size = self.view.bounds.size;
+    if (size.width < 700.0) return NO;
+    return size.width > size.height * 0.82;
+}
+
+- (void)viewWillLayoutSubviews {
+    [super viewWillLayoutSubviews];
+    [self applyAdaptiveLayout];
+}
+
+- (void)applyAdaptiveLayout {
+    BOOL wide = [self shouldUseWideLayout];
+    if (self.didApplyLayout && wide == self.wideLayout) return;
+    self.didApplyLayout = YES;
+    self.wideLayout = wide;
+
+    // UIView 只能有一个父视图：先全部摘下来，再挂到目标容器
+    [self.actionRow removeFromSuperview];
+    [self.numberRow removeFromSuperview];
+    for (UIView *v in [self.controlsCompact.arrangedSubviews copy]) [v removeFromSuperview];
+    for (UIView *v in [self.controlsWide.arrangedSubviews copy]) [v removeFromSuperview];
+    for (UIView *v in [self.rootStack.arrangedSubviews copy]) {
+        if (v != self.boardContainer) [v removeFromSuperview];
+    }
+
+    self.rootMaxWidth.constant = wide ? 1120.0 : 520.0;
+    self.rootStack.axis = wide ? UILayoutConstraintAxisHorizontal : UILayoutConstraintAxisVertical;
+    self.rootStack.spacing = wide ? 30.0 : 14.0;
+
+    if (wide) {
+        [self.controlsWide addArrangedSubview:self.actionRow];
+        [self.controlsWide addArrangedSubview:self.numberRow];
+        [self.rootStack addArrangedSubview:self.controlsWide];
+        self.controlsWidth.active = YES;
+        self.boardPaneSquare.active = YES;
+        [self arrangeButtonsForColumns:3];
+    } else {
+        [self.controlsCompact addArrangedSubview:self.actionRow];
+        [self.controlsCompact addArrangedSubview:self.numberRow];
+        [self.rootStack addArrangedSubview:self.controlsCompact];
+        self.controlsWidth.active = NO;
+        self.boardPaneSquare.active = NO;
+        [self arrangeButtonsForColumns:0];
+    }
+    [self.view setNeedsLayout];
+}
+
+/// columns == 0 为单行铺满，3 为三列网格。
+- (void)arrangeButtonsForColumns:(NSInteger)columns {
+    [self arrangeLane:self.actionRow buttons:self.actionButtons columns:columns spacing:8.0];
+    [self arrangeLane:self.numberRow buttons:self.numberButtons columns:columns spacing:6.0];
+}
+
+- (void)arrangeLane:(UIStackView *)lane
+            buttons:(NSArray<UIButton *> *)buttons
+            columns:(NSInteger)columns
+            spacing:(CGFloat)spacing {
+    if (!lane || buttons.count == 0) return;
+    for (UIView *v in [lane.arrangedSubviews copy]) [v removeFromSuperview];
+
+    if (columns <= 1) {
+        lane.axis = UILayoutConstraintAxisHorizontal;
+        lane.distribution = UIStackViewDistributionFillEqually;
+        lane.spacing = spacing;
+        for (UIButton *b in buttons) [lane addArrangedSubview:b];
+        return;
+    }
+
+    lane.axis = UILayoutConstraintAxisVertical;
+    lane.distribution = UIStackViewDistributionFillEqually;
+    lane.spacing = 10.0;
+    NSInteger count = (NSInteger)buttons.count;
+    for (NSInteger i = 0; i < count; i += columns) {
+        NSInteger limit = MIN(i + columns, count);
+        NSMutableArray<UIButton *> *rowButtons = [NSMutableArray array];
+        for (NSInteger j = i; j < limit; j++) [rowButtons addObject:buttons[(NSUInteger)j]];
+        UIStackView *row = [[UIStackView alloc] initWithArrangedSubviews:rowButtons];
+        row.axis = UILayoutConstraintAxisHorizontal;
+        row.distribution = UIStackViewDistributionFillEqually;
+        row.spacing = 10.0;
+        [lane addArrangedSubview:row];
+    }
 }
 
 - (UIButton *)actionButtonWithTitle:(NSString *)title symbol:(NSString *)symbol {
@@ -413,6 +545,7 @@
     switch (result) {
         case SDKPlaceResultCorrect:
             [SDKTheme impact:UIImpactFeedbackStyleLight];
+            [self.board pulseAtIndex:index color:[SDKTheme userColor]];
             break;
         case SDKPlaceResultWrong:
             [SDKTheme notify:UINotificationFeedbackTypeError];
@@ -525,6 +658,19 @@
     [self refreshUI];
     [self startTimer];
     [[SDKStore shared] saveCurrentGame:fresh];
+
+    // 新的一局：棋盘轻轻落下来，接上庆祝层的节奏
+    if (!UIAccessibilityIsReduceMotionEnabled()) {
+        self.board.transform = CGAffineTransformMakeScale(0.97, 0.97);
+        self.board.alpha = 0.0;
+        [UIView animateWithDuration:0.45 delay:0
+             usingSpringWithDamping:0.86 initialSpringVelocity:0.2
+                            options:UIViewAnimationOptionCurveEaseOut
+                         animations:^{
+            self.board.transform = CGAffineTransformIdentity;
+            self.board.alpha = 1.0;
+        } completion:nil];
+    }
 }
 
 - (void)endCurrentGame {
@@ -557,29 +703,33 @@
     if (self.resultRecorded) return;
     self.resultRecorded = YES;
     [self stopTimer];
-    [self.board celebrateCompletion];
+    [self.board playCompletionWave];
     [SDKTheme notify:UINotificationFeedbackTypeSuccess];
+
+    // 先看历史最佳，再写入，才能判断这一局是不是新纪录
+    NSDictionary *before = [[SDKStore shared] statsForDifficulty:self.game.difficulty];
+    NSInteger previousBest = [before[@"best"] integerValue];
+    BOOL isBest = (previousBest == 0 || (self.game.elapsedSeconds > 0 &&
+                                         self.game.elapsedSeconds < previousBest));
 
     [[SDKStore shared] recordGame:self.game];
     [[SDKStore shared] saveCurrentGame:nil];
 
-    NSString *message = [NSString stringWithFormat:@"用时 %@，失误 %ld 次，提示 %ld 次。\n%@",
-                         [SDKTheme timeString:self.game.elapsedSeconds],
-                         (long)self.game.mistakes, (long)self.game.hintsUsed,
-                         [SDKTheme randomPraise]];
-    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"完成啦"
-                                                                  message:message
-                                                           preferredStyle:UIAlertControllerStyleAlert];
     __weak typeof(self) weakSelf = self;
-    [alert addAction:[UIAlertAction actionWithTitle:@"再来一局" style:UIAlertActionStyleDefault
-                                            handler:^(UIAlertAction *a) {
-        [weakSelf restartGame];
-    }]];
-    [alert addAction:[UIAlertAction actionWithTitle:@"返回首页" style:UIAlertActionStyleCancel
-                                            handler:^(UIAlertAction *a) {
-        [weakSelf.navigationController popToRootViewControllerAnimated:YES];
-    }]];
-    [self presentAlert:alert];
+    SDKCompletionOverlay *overlay =
+        [[SDKCompletionOverlay alloc] initWithDifficulty:self.game.difficulty
+                                                 seconds:self.game.elapsedSeconds
+                                                mistakes:self.game.mistakes
+                                                   hints:self.game.hintsUsed
+                                                  isBest:isBest];
+    UIView *host = self.navigationController.view ?: self.view;
+    [overlay presentInView:host completion:^(SDKCompletionAction action) {
+        if (action == SDKCompletionActionReplay) {
+            [weakSelf restartGame];
+        } else {
+            [weakSelf.navigationController popToRootViewControllerAnimated:YES];
+        }
+    }];
 }
 
 /// Presents an alert safely: never while another presentation is in flight.

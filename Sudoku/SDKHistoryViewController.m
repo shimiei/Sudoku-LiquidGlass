@@ -7,6 +7,7 @@
 #import "SDKStore.h"
 #import "SDKTheme.h"
 #import "SDKBarChartView.h"
+#import "SDKGameViewController.h"
 
 @interface SDKHistoryViewController () <UITableViewDataSource, UITableViewDelegate>
 
@@ -98,12 +99,38 @@
         self.recordsTable.backgroundView = nil;
         return;
     }
-    UILabel *label = [UILabel new];
-    label.text = @"还没有对局记录";
-    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
-    label.textColor = [UIColor secondaryLabelColor];
-    label.textAlignment = NSTextAlignmentCenter;
-    self.recordsTable.backgroundView = label;
+    UIView *empty = [[UIView alloc] initWithFrame:CGRectMake(0, 0, 320, 300)];
+    UIImageView *mascot = [[UIImageView alloc] initWithImage:[SDKTheme mascotSleepy]];
+    mascot.contentMode = UIViewContentModeScaleAspectFit;
+    mascot.translatesAutoresizingMaskIntoConstraints = NO;
+    [mascot.widthAnchor constraintEqualToConstant:132.0].active = YES;
+    [mascot.heightAnchor constraintEqualToConstant:132.0].active = YES;
+
+    UILabel *title = [UILabel new];
+    title.text = @"还没有对局记录";
+    title.font = [UIFont preferredFontForTextStyle:UIFontTextStyleHeadline];
+    title.textColor = [UIColor labelColor];
+    title.textAlignment = NSTextAlignmentCenter;
+
+    UILabel *hint = [UILabel new];
+    hint.text = @"开一局试试，进度会自动保存";
+    hint.font = [UIFont preferredFontForTextStyle:UIFontTextStyleFootnote];
+    hint.textColor = [UIColor secondaryLabelColor];
+    hint.textAlignment = NSTextAlignmentCenter;
+
+    UIStackView *stack = [[UIStackView alloc] initWithArrangedSubviews:@[ mascot, title, hint ]];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.alignment = UIStackViewAlignmentCenter;
+    stack.spacing = 10.0;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [empty addSubview:stack];
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.centerXAnchor constraintEqualToAnchor:empty.centerXAnchor],
+        [stack.centerYAnchor constraintEqualToAnchor:empty.centerYAnchor],
+        [stack.leadingAnchor constraintGreaterThanOrEqualToAnchor:empty.leadingAnchor constant:24.0],
+        [stack.trailingAnchor constraintLessThanOrEqualToAnchor:empty.trailingAnchor constant:-24.0],
+    ]];
+    self.recordsTable.backgroundView = empty;
 }
 
 - (void)sectionChanged {
@@ -157,6 +184,12 @@
 
     NSDictionary *record = self.records[(NSUInteger)row];
     SDKDifficulty difficulty = (SDKDifficulty)[record[@"difficulty"] integerValue];
+    BOOL resumable = ([record[@"game"] isKindOfClass:[NSDictionary class]] &&
+                      ![record[@"completed"] boolValue]);
+    cell.selectionStyle = resumable ? UITableViewCellSelectionStyleDefault
+                                    : UITableViewCellSelectionStyleNone;
+    cell.accessoryType = resumable ? UITableViewCellAccessoryDisclosureIndicator
+                                   : UITableViewCellAccessoryNone;
     NSInteger seconds = [record[@"seconds"] integerValue];
     NSInteger mistakes = [record[@"mistakes"] integerValue];
     BOOL completed = [record[@"completed"] boolValue];
@@ -175,14 +208,45 @@
     });
     NSString *when = [formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:[record[@"date"] doubleValue]]];
 
-    NSString *status = completed ? @"已完成"
-                                 : [NSString stringWithFormat:@"未完成 %ld%%", (long)lround(progress * 100.0)];
+    NSString *status;
+    if (completed) {
+        status = @"已完成";
+    } else if (resumable) {
+        status = [NSString stringWithFormat:@"未完成 %ld%% · 点按继续", (long)lround(progress * 100.0)];
+    } else {
+        status = [NSString stringWithFormat:@"未完成 %ld%%", (long)lround(progress * 100.0)];
+    }
     content.secondaryText = [NSString stringWithFormat:@"%@ · %@ · 失误 %ld", when, status, (long)mistakes];
-    content.image = [UIImage systemImageNamed:completed ? @"checkmark.circle.fill" : @"circle.dashed"];
-    content.imageProperties.tintColor = completed ? [SDKTheme colorForDifficulty:difficulty]
-                                                  : [UIColor tertiaryLabelColor];
+    content.image = [SDKTheme mascotForDifficulty:(NSInteger)difficulty];
+    content.imageProperties.maximumSize = CGSizeMake(30.0, 30.0);
+    content.imageProperties.cornerRadius = 15.0;
     cell.contentConfiguration = content;
     return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    [tableView deselectRowAtIndexPath:indexPath animated:YES];
+    if (tableView != self.recordsTable) return;
+    if (indexPath.row < 0 || indexPath.row >= (NSInteger)self.records.count) return;
+
+    NSDictionary *record = self.records[(NSUInteger)indexPath.row];
+    NSString *identifier = [record[@"id"] isKindOfClass:[NSString class]] ? record[@"id"] : nil;
+    NSTimeInterval timestamp = [record[@"date"] doubleValue];
+    SDKGameState *game = identifier ? [[SDKStore shared] gameForHistoryIdentifier:identifier]
+                                    : [[SDKStore shared] gameForHistoryTimestamp:timestamp];
+    if (!game) return;   // 旧记录没有存档，不可续玩
+    if (!self.navigationController || self.navigationController.topViewController != self) return;
+
+    // 先存成「当前对局」再推页；推成功后才从历史里移走，中途失败也不会丢存档
+    [[SDKStore shared] saveCurrentGame:game];
+    [SDKTheme impact:UIImpactFeedbackStyleLight];
+
+    SDKGameViewController *vc = [[SDKGameViewController alloc] initWithSavedGame:game];
+    [self.navigationController pushViewController:vc animated:YES];
+
+    if (identifier) [[SDKStore shared] deleteHistoryEntryWithIdentifier:identifier];
+    else [[SDKStore shared] deleteHistoryEntryWithDate:timestamp];
+    [self reloadAll];
 }
 
 - (UITableViewCell *)statCellForIndexPath:(NSIndexPath *)indexPath tableView:(UITableView *)tableView {
@@ -287,10 +351,25 @@ trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath API_
                                                                        handler:^(UIContextualAction *action,
                                                                                  UIView *sourceView,
                                                                                  void (^completion)(BOOL)) {
+        if (indexPath.row >= (NSInteger)weakSelf.records.count) {
+            completion(NO);
+            return;
+        }
         NSDictionary *record = weakSelf.records[(NSUInteger)indexPath.row];
-        [[SDKStore shared] deleteHistoryEntryWithDate:[record[@"date"] doubleValue]];
-        [weakSelf reloadAll];
+        NSString *identifier = [record[@"id"] isKindOfClass:[NSString class]] ? record[@"id"] : nil;
+        NSTimeInterval timestamp = [record[@"date"] doubleValue];
+
+        // 数据源先跟上，行由表格自己收；落盘和整表刷新放到动画之后再走
+        NSMutableArray *rest = [weakSelf.records mutableCopy];
+        [rest removeObjectAtIndex:(NSUInteger)indexPath.row];
+        weakSelf.records = rest;
         completion(YES);
+
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (identifier) [[SDKStore shared] deleteHistoryEntryWithIdentifier:identifier];
+            else [[SDKStore shared] deleteHistoryEntryWithDate:timestamp];
+            [weakSelf reloadAll];
+        });
     }];
     delete.image = [UIImage systemImageNamed:@"trash"];
     return [UISwipeActionsConfiguration configurationWithActions:@[ delete ]];

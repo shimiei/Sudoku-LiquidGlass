@@ -30,6 +30,15 @@ NS_ASSUME_NONNULL_BEGIN
 /// Difficulty accent dot, matching the system palette.
 + (UIColor *)colorForDifficulty:(NSInteger)difficulty;
 
+#pragma mark - Mascots
+
+/// 每档难度一只动物：熊猫 / 狐狸 / 老虎，圆形贴纸。
++ (nullable UIImage *)mascotForDifficulty:(NSInteger)difficulty;
+/// 睡觉的熊猫，用于空白状态。
++ (nullable UIImage *)mascotSleepy;
+/// 与插画底色一致的主题色（浅色态下用作行内图标的衬底）。
++ (UIColor *)mascotTintForDifficulty:(NSInteger)difficulty;
+
 #pragma mark - Fonts
 
 + (UIFont *)digitsFontOfSize:(CGFloat)size weight:(UIFontWeight)weight;
