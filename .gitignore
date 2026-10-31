@@ -1,0 +1,19 @@
+# Build output
+*.ipa
+*.app/
+out/
+dist/
+build/
+
+# Local toolchain / IDE
+.DS_Store
+Thumbs.db
+*.o
+*.dSYM/
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.vscode/
+.idea/
+
+# DSH image generation scratch
+dsh-image-gen/
