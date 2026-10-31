@@ -343,16 +343,23 @@
 
 #pragma mark - Actions
 
+/// True once the player has actually filled something in (not just loaded the puzzle).
+- (BOOL)hasUserProgress:(SDKGameState *)game {
+    NSInteger givens = 0;
+    for (NSNumber *n in game.puzzle) if (n.integerValue != 0) givens++;
+    return [game filledCount] > givens;
+}
+
 - (void)handleDifficultyTap:(UITapGestureRecognizer *)gesture {
     NSInteger index = (NSInteger)[self.difficultyCards indexOfObject:(SDKGlassView *)gesture.view];
     if (index == NSNotFound || index < 0 || index > 2) return;
 
     SDKGameState *current = [[SDKStore shared] currentGame];
-    if (current) {
+    if (current && [self hasUserProgress:current]) {
         // The previous game is kept in history as abandoned before switching.
         [[SDKStore shared] recordGame:current];
-        [[SDKStore shared] saveCurrentGame:nil];
     }
+    [[SDKStore shared] saveCurrentGame:nil];
 
     [SDKTheme impact:UIImpactFeedbackStyleMedium];
     SDKGameViewController *vc = [[SDKGameViewController alloc] initWithDifficulty:(SDKDifficulty)index];

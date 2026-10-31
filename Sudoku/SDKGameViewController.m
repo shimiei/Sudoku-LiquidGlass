@@ -561,6 +561,9 @@ static NSString * const kSDKSymbolBack    = @"chevron.left";
 - (void)handleCompletion {
     if (self.resultRecorded) return;
     self.resultRecorded = YES;
+    self.loupePinned = NO;
+    self.loupeButton.toggled = NO;
+    [self.loupe hideAnimated:NO];
     self.game.finished = YES;
     self.game.paused = NO;
     [self stopTimer];
@@ -582,6 +585,9 @@ static NSString * const kSDKSymbolBack    = @"chevron.left";
 }
 
 - (void)showPauseOverlay {
+    self.loupePinned = NO;
+    self.loupeButton.toggled = NO;
+    [self.loupe hideAnimated:NO];
     if (self.pauseOverlay) {
         [self.view bringSubviewToFront:self.pauseOverlay];
         return;

@@ -14,6 +14,8 @@ MINIOS="${MINIOS:-15.0}"
 
 if [ -x "$HOME/ios-ipa-kit/build-objc.sh" ]; then
     bash "$HOME/ios-ipa-kit/build-objc.sh" "$ROOT/Sudoku" "$APPNAME" "$BUNDLEID" "$MINIOS"
+    cp -f "${OUT:-$HOME/ios-ipa-kit/out}/$APPNAME-unsigned.ipa" "$ROOT/$APPNAME-unsigned.ipa"
+    echo "OK -> $ROOT/$APPNAME-unsigned.ipa"
     exit 0
 fi
 

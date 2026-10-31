@@ -21,7 +21,7 @@
     if (self) {
         self.backgroundColor = [UIColor clearColor];
         self.opaque = NO;
-        self.contentInset = 7.0;
+        self.contentInset = 12.0;
         _selectedIndex = -1;
         _highlightSameNumbers = YES;
         _highlightPeers = YES;
