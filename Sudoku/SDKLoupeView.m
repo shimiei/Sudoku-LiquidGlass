@@ -8,6 +8,10 @@
 
 static const CGFloat kSDKLoupeDiameter = 148.0;
 
+@interface SDKLoupeView ()
+- (CGPoint)clampCenter:(CGPoint)center;
+@end
+
 @implementation SDKLoupeView {
     CGPoint _boardPoint;
     CGFloat _cellSize;
@@ -47,7 +51,7 @@ static const CGFloat kSDKLoupeDiameter = 148.0;
     _cellSize = MAX(cellSize, 1.0);
     self.focusIndex = focusIndex;
     self.bounds = CGRectMake(0, 0, kSDKLoupeDiameter, kSDKLoupeDiameter);
-    self.center = center;
+    self.center = [self clampCenter:center];
 
     if (self.superview != host) {
         [self removeFromSuperview];
@@ -79,14 +83,7 @@ static const CGFloat kSDKLoupeDiameter = 148.0;
     _cellSize = MAX(cellSize, 1.0);
     self.focusIndex = focusIndex;
 
-    CGPoint target = center;
-    CGFloat half = kSDKLoupeDiameter / 2.0;
-    if (self.superview) {
-        CGFloat w = CGRectGetWidth(self.superview.bounds);
-        CGFloat h = CGRectGetHeight(self.superview.bounds);
-        target.x = MAX(half + 2.0, MIN(w - half - 2.0, target.x));
-        target.y = MAX(half + 2.0, MIN(h - half - 2.0, target.y));
-    }
+    CGPoint target = [self clampCenter:center];
     [UIView animateWithDuration:0.10
                           delay:0
                         options:UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionAllowUserInteraction | UIViewAnimationOptionCurveLinear
@@ -100,6 +97,8 @@ static const CGFloat kSDKLoupeDiameter = 148.0;
     if (!_visible) return;
     _visible = NO;
     void (^cleanup)(BOOL) = ^(BOOL finished) {
+        // A new presentation may have started during the fade-out: keep it alive.
+        if (self->_visible) return;
         [self removeFromSuperview];
     };
     if (animated) {
@@ -117,6 +116,18 @@ static const CGFloat kSDKLoupeDiameter = 148.0;
 - (void)setFocusIndex:(NSInteger)focusIndex {
     _focusIndex = focusIndex;
     [self setNeedsDisplay];
+}
+
+- (CGPoint)clampCenter:(CGPoint)center {
+    CGFloat half = kSDKLoupeDiameter / 2.0;
+    UIView *host = self.superview;
+    if (!host) return center;
+    CGPoint target = center;
+    CGFloat w = CGRectGetWidth(host.bounds);
+    CGFloat h = CGRectGetHeight(host.bounds);
+    target.x = MAX(half + 4.0, MIN(w - half - 4.0, target.x));
+    target.y = MAX(half + 4.0, MIN(h - half - 4.0, target.y));
+    return target;
 }
 
 #pragma mark - Drawing

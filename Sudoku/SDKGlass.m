@@ -283,7 +283,7 @@ static inline UIColor *SDKWhite(CGFloat alpha) {
 
     _badgeLabel = [[UILabel alloc] initWithFrame:CGRectZero];
     _badgeLabel.textAlignment = NSTextAlignmentRight;
-    _badgeLabel.font = [SDKTheme roundedFont:10 weight:UIFontWeightBold];
+    _badgeLabel.font = [SDKTheme roundedFont:9 weight:UIFontWeightBold];
     _badgeLabel.textColor = [SDKTheme textTertiary];
     _badgeLabel.hidden = YES;
     [self addSubview:_badgeLabel];
@@ -438,7 +438,8 @@ static inline UIColor *SDKWhite(CGFloat alpha) {
     }
 
     if (!_badgeLabel.hidden) {
-        _badgeLabel.frame = CGRectMake(w - 26, h - 17, 22, 11);
+        // reminder count sits as a superscript in the top-right corner
+        _badgeLabel.frame = CGRectMake(w - 24.0, 3.0, 20.0, 10.0);
     }
 }
 
@@ -470,11 +471,14 @@ static inline UIColor *SDKWhite(CGFloat alpha) {
 }
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    if (!self.enabled) return;
+    BOOL wasEnabled = self.enabled;
     UITouch *t = touches.anyObject;
     BOOL inside = CGRectContainsPoint(CGRectInset(self.bounds, -8, -8), [t locationInView:self]);
-    [self setPressed:NO];
-    if (inside && self.onTap) self.onTap();
+    [self setPressed:NO];   // always clear, even if we were disabled mid-touch
+    if (wasEnabled && inside) {
+        [self sendActionsForControlEvents:UIControlEventTouchUpInside];
+        if (self.onTap) self.onTap();
+    }
 }
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -635,6 +639,9 @@ static inline UIColor *SDKWhite(CGFloat alpha) {
 }
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    if (!self.enabled) return;
+    UITouch *t = touches.anyObject;
+    if (t && !CGRectContainsPoint(CGRectInset(self.bounds, -4, -4), [t locationInView:self])) return;
     _on = !_on;
     [self setOn:_on animated:YES];
     [SDKTheme impact:UIImpactFeedbackStyleLight];

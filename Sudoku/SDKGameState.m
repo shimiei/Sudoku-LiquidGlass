@@ -174,7 +174,7 @@
         if (self.solution.count < 81) { done = NO; break; }
         if ([self valueAtIndex:i] != self.solution[(NSUInteger)i].integerValue) { done = NO; break; }
     }
-    if (done) self.finished = YES;
+    self.finished = done;
 }
 
 - (void)clearPeerNotes:(NSInteger)value atIndex:(NSInteger)index {

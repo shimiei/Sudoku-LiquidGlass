@@ -152,10 +152,13 @@ static SDKSudokuPuzzle *SDKBuildPuzzle(const int *puzzle, const int *solution, S
     int puzzle[81];
     int solution[81];
     int best[81];
-    int bestClues = 999;
+    int bestSolution[81];
+    int bestDelta = 1 << 30;
     BOOL haveBest = NO;
     int order[81];
     int attempts = (difficulty == SDKDifficultyHard) ? 10 : 14;
+    int target = (difficulty == SDKDifficultyEasy) ? 44
+               : (difficulty == SDKDifficultyMedium) ? 32 : 24;
 
     for (int attempt = 0; attempt < attempts; attempt++) {
         memset(puzzle, 0, sizeof(puzzle));
@@ -165,27 +168,7 @@ static SDKSudokuPuzzle *SDKBuildPuzzle(const int *puzzle, const int *solution, S
         for (int i = 0; i < 81; i++) order[i] = i;
         SDKShuffleIndices(order, 81);
 
-        if (difficulty == SDKDifficultyEasy || difficulty == SDKDifficultyMedium) {
-            // 180° symmetric digging keeps the grid looking tidy.
-            int target = (difficulty == SDKDifficultyEasy) ? 44 : 32;
-            for (int k = 0; k < 41; k++) {
-                int a = order[k], b = 80 - order[k];
-                if (!puzzle[a]) continue;
-                int va = puzzle[a], vb = puzzle[b];
-                puzzle[a] = 0; puzzle[b] = 0;
-                if (!SDKHasUniqueSolution(puzzle)) { puzzle[a] = va; puzzle[b] = vb; }
-                if (SDKClueCount(puzzle) <= target) break;
-            }
-            int clues = SDKClueCount(puzzle);
-            BOOL good = (difficulty == SDKDifficultyEasy) ? (clues >= 38)
-                                                          : (clues >= 28 && clues <= 36);
-            if (good) return SDKBuildPuzzle(puzzle, solution, difficulty);
-            if (!haveBest || clues < bestClues) {
-                bestClues = clues;
-                memcpy(best, puzzle, sizeof(best));
-                haveBest = YES;
-            }
-        } else {
+        if (difficulty == SDKDifficultyHard) {
             // Aggressive minimisation: every remaining clue becomes required.
             int changed = 1, pass = 0;
             while (changed && pass < 8) {
@@ -202,17 +185,38 @@ static SDKSudokuPuzzle *SDKBuildPuzzle(const int *puzzle, const int *solution, S
             }
             int clues = SDKClueCount(puzzle);
             if (clues <= 26) return SDKBuildPuzzle(puzzle, solution, difficulty);
-            if (!haveBest || clues < bestClues) {
-                bestClues = clues;
-                memcpy(best, puzzle, sizeof(best));
-                haveBest = YES;
+        } else {
+            // 180° symmetric digging keeps the grid looking tidy.
+            int lowBound = (difficulty == SDKDifficultyEasy) ? 38 : 28;
+            int highBound = (difficulty == SDKDifficultyEasy) ? 81 : 36;
+            for (int k = 0; k < 41; k++) {
+                int a = order[k], b = 80 - order[k];
+                if (!puzzle[a]) continue;
+                int va = puzzle[a], vb = puzzle[b];
+                puzzle[a] = 0; puzzle[b] = 0;
+                if (!SDKHasUniqueSolution(puzzle)) { puzzle[a] = va; puzzle[b] = vb; }
+                if (SDKClueCount(puzzle) <= target) break;
             }
+            int clues = SDKClueCount(puzzle);
+            if (clues >= lowBound && clues <= highBound) {
+                return SDKBuildPuzzle(puzzle, solution, difficulty);
+            }
+        }
+
+        // Remember the candidate closest to the requested difficulty, keeping
+        // its own solution so puzzle and solution never drift apart.
+        int delta = abs(SDKClueCount(puzzle) - target);
+        if (!haveBest || delta < bestDelta) {
+            bestDelta = delta;
+            memcpy(best, puzzle, sizeof(best));
+            memcpy(bestSolution, solution, sizeof(bestSolution));
+            haveBest = YES;
         }
     }
 
-    if (haveBest) return SDKBuildPuzzle(best, solution, difficulty);
+    if (haveBest) return SDKBuildPuzzle(best, bestSolution, difficulty);
 
-    // Extremely unlikely fallback: hand out a solved grid.
+    // Extremely unlikely fallback: hand out a solved grid (always self consistent).
     memset(solution, 0, sizeof(solution));
     SDKFillRandomSolution(solution);
     return SDKBuildPuzzle(solution, solution, difficulty);

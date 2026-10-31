@@ -343,6 +343,11 @@
 
 #pragma mark - Actions
 
+/// Guards against double taps pushing the same screen twice.
+- (BOOL)isTopOfNavigationStack {
+    return (self.navigationController.topViewController == self || self.navigationController == nil);
+}
+
 /// True once the player has actually filled something in (not just loaded the puzzle).
 - (BOOL)hasUserProgress:(SDKGameState *)game {
     NSInteger givens = 0;
@@ -351,6 +356,7 @@
 }
 
 - (void)handleDifficultyTap:(UITapGestureRecognizer *)gesture {
+    if (![self isTopOfNavigationStack]) return;
     NSInteger index = (NSInteger)[self.difficultyCards indexOfObject:(SDKGlassView *)gesture.view];
     if (index == NSNotFound || index < 0 || index > 2) return;
 
@@ -367,6 +373,7 @@
 }
 
 - (void)resumeGame {
+    if (![self isTopOfNavigationStack]) return;
     SDKGameState *current = [[SDKStore shared] currentGame];
     if (!current) return;
     [SDKTheme impact:UIImpactFeedbackStyleMedium];
@@ -375,16 +382,19 @@
 }
 
 - (void)openHistory {
+    if (![self isTopOfNavigationStack]) return;
     SDKHistoryViewController *vc = [[SDKHistoryViewController alloc] initWithSection:SDKHistorySectionRecords];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)openStats {
+    if (![self isTopOfNavigationStack]) return;
     SDKHistoryViewController *vc = [[SDKHistoryViewController alloc] initWithSection:SDKHistorySectionStats];
     [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)openSettings {
+    if (![self isTopOfNavigationStack]) return;
     SDKSettingsViewController *vc = [SDKSettingsViewController new];
     [self.navigationController pushViewController:vc animated:YES];
 }

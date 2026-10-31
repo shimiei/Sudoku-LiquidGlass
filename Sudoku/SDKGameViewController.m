@@ -539,7 +539,12 @@ static NSString * const kSDKSymbolBack    = @"chevron.left";
     }
 
     CGPoint pointInView = [board convertPoint:point toView:self.view];
-    CGPoint target = CGPointMake(pointInView.x, pointInView.y - 108.0);
+    CGFloat half = 74.0;                      // loupe radius
+    CGFloat aboveY = pointInView.y - half - 34.0;
+    CGFloat belowY = pointInView.y + half + 34.0;
+    // Keep the loupe fully on screen: flip below the finger near the top edge.
+    CGFloat targetY = (aboveY - half >= 8.0) ? aboveY : belowY;
+    CGPoint target = CGPointMake(pointInView.x, targetY);
     NSInteger index = [board indexForPoint:point];
     CGFloat cellSize = [board cellSize];
 
