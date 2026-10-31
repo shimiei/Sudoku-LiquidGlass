@@ -3,7 +3,7 @@
 <img src="docs/Icon-1024.png" width="120" align="right" />
 
 一个从零手写的原生 iOS 数独游戏。**Objective-C + UIKit，零第三方依赖，零配置工程**——
-没有 Xcode 工程、没有 CocoaPods、没有 Swift Package，只有 20 个 `.m/.h` 文件，
+没有 Xcode 工程、没有 CocoaPods、没有 Swift Package，只有 16 个 `.m` + 15 个 `.h`，
 用 `clang + ld64.lld` 就能直接编译出可安装的 `.ipa`。
 
 界面按 **iOS 26 的 Liquid Glass 语言**设计：磨砂玻璃面板、高光描边、随背景流动的极光渐变、
