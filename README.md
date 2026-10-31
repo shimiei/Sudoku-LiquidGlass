@@ -1,69 +1,87 @@
-# 数独
+# 数独 · iOS 26 液态玻璃
 
-一个从零手写的原生 iOS 数独游戏。**Objective-C + UIKit，零第三方依赖，零配置工程**——
-没有 Xcode 工程、没有 CocoaPods、没有 Swift Package，只有 13 个 `.m` + 12 个 `.h`，
-用 `clang + ld64.lld` 就能直接在命令行里编出可安装的 `.ipa`。
+一个从零手写的原生 iOS 数独游戏。**Objective-C + UIKit，零第三方依赖、零 Xcode 工程**——
+13 个 `.m` + 13 个 `.h`，用 `clang + ld64.lld` 在命令行里直接编出可安装的 `.ipa`。
 
-界面按 **Apple Human Interface Guidelines** 搭：系统字体、语义色、`UITableView` 的
-inset-grouped 列表、`UIButton.Configuration`、`UIAlertController`、SF Symbols，
-自动跟随系统浅色 / 深色外观，并支持动态字体缩放。
+界面用 **iOS 26 的 Liquid Glass**：玻璃面板、玻璃按钮、玻璃放大镜都是系统用
+`UIGlassEffect` / `UIButtonConfiguration.glassButtonConfiguration` 真渲染出来的，
+不是自己画的渐变和假模糊。
 
 ![图标](docs/Icon-1024.png)
 
-## 为什么这一版看起来像系统应用
+## 液态玻璃是真的，不是画的
 
-上一版试图自己"发明"一套液态玻璃：自绘渐变描边、极光背景、霓虹高光。结果是浮夸、对比度差、
-和系统割裂。这一版把它全部删掉，换成 Apple 手册里现成的东西：
+这是最容易搞错的一点，所以写在最前面：**液态玻璃是系统材质，只有用 iOS 26 SDK 编译的
+app 才会被系统套上新设计**。用旧 SDK 编译，哪怕你在代码里写满模糊和渐变，出来的也是旧外观。
 
-| 位置 | 用的什么 |
+判断依据是 Mach-O 里的 `LC_BUILD_VERSION`，本项目的正式构建必须是：
+
+```
+$ python3 scripts/macho_info.py Payload/Sudoku.app/Sudoku
+platform : iOS
+minos    : 15.0.0
+sdk      : 26.5.0    <-- 必须是 26.x
+```
+
+- `sdk 26.5.0` → 系统按 iOS 26 渲染（玻璃导航栏、玻璃弹窗、玻璃按钮、滚动边缘效果）
+- `minos 15.0.0` → 同一份包还能装在 iOS 15 及以上
+
+具体用到的系统 API：
+
+| 位置 | 实现 |
 | --- | --- |
-| 首页 | `UITableViewStyleInsetGrouped` + `UIListContentConfiguration`，与「设置」同构 |
-| 导航 | 标准 `UINavigationController`，大标题、系统返回箭头、SF Symbols 工具栏按钮 |
-| 棋盘 | 一张圆角卡片，语义色绘制，发丝分隔线 + 1.5pt 宫线 |
-| 按钮 | `UIButton.Configuration` 的 tinted / gray / filled，按下态由系统负责 |
-| 设置 | 分组列表 + `UISwitch` 作为 `accessoryView`，危险操作单独红色居中一行 |
-| 暂停 / 通关 | `UIAlertController`，不做自制浮层 |
-| 配色 | 全部语义色：`label`、`secondaryLabel`、`separator`、`systemBlue`、`systemRed` |
-| 外观 | 浅色 / 深色自动切换（`traitCollectionDidChange` 里重绘） |
+| 棋盘底板 | `UIGlassEffect` + `UIVisualEffectView`，圆角 26 |
+| 6 个操作键（撤销/重做…） | `+[UIButtonConfiguration glassButtonConfiguration]` |
+| 9 个数字键 | 同上，选中笔记时用 `prominentGlassButtonConfiguration` |
+| 放大镜 | 圆形 `UIGlassEffect`（`interactive = YES`，跟手有反光）+ 矢量重绘格子 |
+| 导航栏 / 弹窗 / 分段控件 | 系统组件，26 上自动是玻璃 |
+| 背景 | 两团极淡的系统色光晕（alpha ≤ 0.13），给玻璃一点可折射的内容 |
+
+`SDKMaterial` 是唯一碰这些 API 的地方。玻璃不可用时（旧 SDK 编译，或系统低于 iOS 26）
+自动退回系统语义色卡片，**不会用假的模糊去冒充玻璃**。
 
 ## 功能
 
-- **三种难度**：简单 44 / 中等 32 / 困难 24 提示数，位掩码 + MRV 回溯生成，**每局校验唯一解**
-- **放大镜**：按住棋盘拖动，手指上方浮起 2.1× 圆形放大镜，按矢量重绘当前格子（不是截屏放大，不糊）
-- **笔记**：笔记模式、一键填满全部候选、自动清除关联笔记
-- **撤销 / 重做**：可回溯 120 步
-- **提示**：自动挑最该填的格子并高亮
+- **三种难度**：简单 44 / 中等 32 / 困难 24 提示数；位掩码 + MRV 回溯生成，**每局校验唯一解**
+- **放大镜**：按住棋盘拖动，浮起 2.1× 玻璃放大镜，按矢量重绘当前格子（不是截屏放大）
+- **笔记**：笔记模式、一键填满候选、自动清除关联笔记
+- **撤销 / 重做**（120 步）、**提示**（自动挑最该填的格子）
 - **冲突提示**：同行列宫重复标红、可选即时判错、失误计数
-- **计时与暂停**：切到后台自动暂停并自动存档，回到前台询问是否继续
-- **历史与统计**：每局记录（可左滑删除）、最佳 / 平均用时、完成率、最近七天柱状图
-- **断点续玩**：退出不会丢进度，首页第一行就是「继续对局」
-- **触感反馈**、动态字体、VoiceOver 标签
+- **计时与暂停**：切后台自动暂停并自动存档，回前台询问是否继续
+- **历史与统计**：每局记录（左滑删除）、最佳 / 平均用时、完成率、最近七天柱状图
+- **断点续玩**、触感反馈、动态字体、VoiceOver 标签、浅色 / 深色自动
 
 ## 编译（不需要 Mac、不需要 Apple 账号）
 
-需要 Linux / WSL 上的 `clang`、`ld64.lld` 和一份 iPhoneOS SDK（例如 theos 的 `sdks`）。
+需要 `clang`、`ld64.lld` 和一份 iOS SDK。
 
 ```bash
-# 只做语法与警告检查
-bash scripts/check.sh
+# 1) 拿一份带 iOS 26 的 SDK（只取头文件和 stub，约 310MB）
+git clone --filter=blob:none --sparse --depth 1 https://github.com/xybp888/iOS-SDKs.git ~/sdk26
+cd ~/sdk26 && git sparse-checkout set --no-cone \
+    "/iPhoneOS26.5.sdk/usr/include/**" "/iPhoneOS26.5.sdk/usr/lib/**" \
+    "/iPhoneOS26.5.sdk/System/Library/Frameworks/**" \
+    "/iPhoneOS26.5.sdk/System/Library/PrivateFrameworks/**/*.tbd" \
+    "/iPhoneOS26.5.sdk/System/Library/SubFrameworks/**" \
+    "/iPhoneOS26.5.sdk/SDKSettings.plist"
 
-# 编译 arm64 未签名 ipa（产物在仓库根目录）
-bash scripts/build-ios.sh
+# 2) 编
+bash scripts/check.sh        # 逐文件语法/类型检查
+bash scripts/build-ios.sh    # 产出仓库根目录的 Sudoku-unsigned.ipa
+
+# 3) 确认打进去的是新设计
+python3 scripts/macho_info.py out/Sudoku.app/Sudoku    # sdk 应为 26.x
 ```
 
-脚本做的事：`clang -c` 编译全部 `.m` → `ld64.lld` 链接成 Mach-O（arm64，最低 iOS 15）
-→ 组装 `Payload/Sudoku.app/` → `zip` 成未签名 `.ipa`。框架（UIKit / Foundation / CoreGraphics /
-QuartzCore）由脚本按源码里的 `#import` 自动补 `-framework`。
+指定 SDK：`SDK=/path/to/iPhoneOS26.5.sdk bash scripts/build-ios.sh`。
+只想要旧外观（例如用 theos 的公开 SDK）也能编：
+`SDK=~/theos/sdks/iPhoneOS16.5.sdk bash scripts/build-ios.sh` —— 玻璃相关代码会被裁掉。
 
-图标由 `scripts/make_icon.py` 用 Pillow 精确绘制并导出全部尺寸（扁平、无圆角、无透明）。
+图标由 `scripts/make_icon.py` 用 Pillow 按精确几何绘制并导出全部尺寸（扁平、无圆角、无透明）。
 
 ## 安装
 
-ipa 未签名，任选一种方式自签安装：
-
-- **TrollStore**（支持的系统直接安装）
-- **ESign / Feather**：用自己的 p12 重签后安装
-- **Sideloadly / AltStore**：Apple ID 签名，7 天有效
+ipa 未签名，任选一种自签安装：**TrollStore** / **ESign** / **Feather** / **Sideloadly**。
 
 ## 目录
 
@@ -71,27 +89,30 @@ ipa 未签名，任选一种方式自签安装：
 Sudoku/
   main.m                    程序入口
   SDKAppDelegate.{h,m}      窗口 + 导航控制器
+  SDKMaterial.{h,m}         液态玻璃入口（UIGlassEffect / 玻璃按钮），含旧系统回退
+  SDKBackdropView.{h,m}     玻璃下方的淡色光晕
   SDKHomeViewController.*   首页（inset-grouped 列表）
-  SDKGameViewController.*   对局页（棋盘、键盘、计时、暂停/通关）
-  SDKHistoryViewController.* 历史与统计（分段控件 + 两个列表 + 柱状图）
-  SDKSettingsViewController.* 设置（分组列表 + 开关）
-  SDKBoardView.*            9×9 棋盘绘制与触摸（同时供放大镜复用）
-  SDKLoupeView.*            圆形放大镜（矢量重绘）
+  SDKGameViewController.*   对局页（玻璃棋盘、键盘、计时、暂停/通关）
+  SDKHistoryViewController.* 历史与统计
+  SDKSettingsViewController.* 设置
+  SDKBoardView.*            9×9 绘制与触摸（放大镜复用同一套绘制）
+  SDKLoupeView.*            玻璃放大镜（矢量重绘）
   SDKBarChartView.*         最近七天柱状图
-  SDKSudokuEngine.*         题目生成 / 求解器（纯 C 内核）
-  SDKGameState.*            一局的状态、笔记、撤销栈
-  SDKStore.*                NSUserDefaults 持久化：设置、存档、历史、统计
+  SDKSudokuEngine.*         题目生成 / 求解器
+  SDKGameState.*            一局状态、笔记、撤销栈
+  SDKStore.*                NSUserDefaults 持久化
   SDKTheme.*                语义色、字体、触感、格式化
 Resources/                  Info.plist 与图标
-scripts/                    check.sh、build-ios.sh、make_icon.py
+scripts/                    check.sh、build-ios.sh、make_icon.py、macho_info.py
 ```
 
 ## 已知限制
 
-- 没有用 iOS 26 SDK 编译（本机是 Windows + WSL，只有 iOS 16.5 SDK），所以系统级
-  液态玻璃材质在 iOS 26 上不会由系统渲染；这也是这一版改用系统标准组件的原因——
-  它在任何 iOS 版本上都和在系统里长出来的一样。
-- 仅竖屏；iPad 上内容宽度限制在 520pt 以保证可读性。
+- **没有在真机或模拟器上跑过**（本机是 Windows + WSL，没有 Xcode/模拟器）。正确性靠
+  编译零警告、`LC_BUILD_VERSION` 校验、以及题目生成器的 600 局对拍（数组一致、唯一解、
+  解可还原）。
+- 玻璃的实际观感依赖系统版本：iOS 26 上是真玻璃，iOS 15–25 上是语义色卡片。
+- 仅竖屏；iPad 上内容宽度限制 520pt。
 
 ## 许可
 

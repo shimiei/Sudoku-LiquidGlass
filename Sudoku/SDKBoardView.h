@@ -34,6 +34,9 @@ NS_ASSUME_NONNULL_BEGIN
 @property (nonatomic) BOOL autoCheck;
 @property (nonatomic) CGFloat contentInset;      // default 6
 
+/// 玻璃面板垫在下面时，棋盘自己不再画卡片底色和描边。
+- (void)useGlassPanel:(BOOL)glass;
+
 - (CGFloat)cellSize;
 - (CGRect)gridRect;                              // the 9×9 square inside the card
 - (CGRect)rectForIndex:(NSInteger)index;

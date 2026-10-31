@@ -52,6 +52,21 @@
     [self.layer addSublayer:_selectionRing];
 }
 
+- (void)useGlassPanel:(BOOL)glass {
+    if (glass) {
+        self.backgroundColor = UIColor.clearColor;
+        self.layer.cornerRadius = 0.0;
+        self.layer.borderWidth = 0.0;
+    } else {
+        self.backgroundColor = [SDKTheme boardBackground];
+        self.layer.cornerRadius = 10.0;
+        self.layer.cornerCurve = kCACornerCurveContinuous;
+        self.layer.borderWidth = 1.0 / UIScreen.mainScreen.scale;
+        self.layer.borderColor = [SDKTheme cgColor:[SDKTheme gridLine] traits:self.traitCollection];
+    }
+    [self setNeedsDisplay];
+}
+
 #pragma mark - Geometry
 
 - (CGFloat)cellSize {

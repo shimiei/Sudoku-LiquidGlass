@@ -8,6 +8,8 @@
 
 #import "SDKGameViewController.h"
 #import "SDKBoardView.h"
+#import "SDKBackdropView.h"
+#import "SDKMaterial.h"
 #import "SDKLoupeView.h"
 #import "SDKStore.h"
 #import "SDKTheme.h"
@@ -137,6 +139,12 @@
 #pragma mark - Content
 
 - (void)buildContent {
+    // 玻璃要有东西可折射，垫一层极淡的系统色光晕（不抢注意力）
+    SDKBackdropView *backdrop = [[SDKBackdropView alloc] initWithFrame:self.view.bounds];
+    backdrop.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    [self.view addSubview:backdrop];
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
+
     UIView *boardContainer = [UIView new];
     boardContainer.translatesAutoresizingMaskIntoConstraints = NO;
 
@@ -144,7 +152,21 @@
     self.board.translatesAutoresizingMaskIntoConstraints = NO;
     self.board.delegate = self;
     self.board.game = self.game;
+    self.board.contentInset = 12.0;
+
+    // iOS 26：真正的液态玻璃板；旧系统：语义色卡片
+    BOOL glass = [SDKMaterial glassAvailable];
+    UIView *panel = [SDKMaterial panelWithCornerRadius:26.0];
+    panel.translatesAutoresizingMaskIntoConstraints = NO;
+    [boardContainer addSubview:panel];
     [boardContainer addSubview:self.board];
+    [self.board useGlassPanel:glass];
+    [NSLayoutConstraint activateConstraints:@[
+        [panel.leadingAnchor constraintEqualToAnchor:self.board.leadingAnchor],
+        [panel.trailingAnchor constraintEqualToAnchor:self.board.trailingAnchor],
+        [panel.topAnchor constraintEqualToAnchor:self.board.topAnchor],
+        [panel.bottomAnchor constraintEqualToAnchor:self.board.bottomAnchor],
+    ]];
 
     [NSLayoutConstraint activateConstraints:@[
         [self.board.centerXAnchor constraintEqualToAnchor:boardContainer.centerXAnchor],
@@ -219,7 +241,12 @@
 
 - (UIButton *)actionButtonWithTitle:(NSString *)title symbol:(NSString *)symbol {
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
-    UIButtonConfiguration *c = [UIButtonConfiguration tintedButtonConfiguration];
+    UIButtonConfiguration *c = [SDKMaterial glassButtonConfigurationProminent:NO];
+    if (!c) {
+        c = [UIButtonConfiguration tintedButtonConfiguration];
+        c.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+        c.contentInsets = NSDirectionalEdgeInsetsMake(5.0, 1.0, 5.0, 1.0);
+    }
     c.image = [UIImage systemImageNamed:symbol];
     c.preferredSymbolConfigurationForImage =
         [UIImageSymbolConfiguration configurationWithPointSize:15.0 weight:UIImageSymbolWeightSemibold];
@@ -228,18 +255,23 @@
     // Fixed size: these sit in a fixed-height toolbar, so they must not grow.
     UIFont *font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium];
     c.attributedTitle = [[NSAttributedString alloc] initWithString:title
-                                                       attributes:@{ NSFontAttributeName : font }];
-    c.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-    c.contentInsets = NSDirectionalEdgeInsetsMake(5.0, 1.0, 5.0, 1.0);
+                                                       attributes:@{ NSFontAttributeName : font,
+                                                                     NSForegroundColorAttributeName : [UIColor labelColor] }];
     b.configuration = c;
     return b;
 }
 
 - (UIButtonConfiguration *)digitConfigurationForDigit:(NSInteger)digit remaining:(NSInteger)remaining {
-    UIButtonConfiguration *c = [UIButtonConfiguration grayButtonConfiguration];
+    UIButtonConfiguration *c = [SDKMaterial glassButtonConfigurationProminent:NO];
+    if (!c) {
+        c = [UIButtonConfiguration grayButtonConfiguration];
+        c.cornerStyle = UIButtonConfigurationCornerStyleMedium;
+        c.contentInsets = NSDirectionalEdgeInsetsMake(3.0, 0.0, 3.0, 0.0);
+    }
     UIFont *font = [UIFont monospacedDigitSystemFontOfSize:21.0 weight:UIFontWeightMedium];
     c.attributedTitle = [[NSAttributedString alloc] initWithString:[NSString stringWithFormat:@"%ld", (long)digit]
-                                                        attributes:@{ NSFontAttributeName : font }];
+                                                        attributes:@{ NSFontAttributeName : font,
+                                                                      NSForegroundColorAttributeName : [UIColor labelColor] }];
     if (remaining > 0 && remaining < 9) {
         UIFont *small = [UIFont monospacedDigitSystemFontOfSize:9.0 weight:UIFontWeightRegular];
         NSMutableParagraphStyle *p = [NSMutableParagraphStyle new];
@@ -249,8 +281,6 @@
                                                                               NSForegroundColorAttributeName : [UIColor secondaryLabelColor],
                                                                               NSParagraphStyleAttributeName : p }];
     }
-    c.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-    c.contentInsets = NSDirectionalEdgeInsetsMake(3.0, 0.0, 3.0, 0.0);
     return c;
 }
 
@@ -289,19 +319,24 @@
     self.undoButton.enabled = self.game.canUndo;
     self.redoButton.enabled = self.game.canRedo;
 
-    UIButtonConfiguration *note = self.noteButton.configuration;
-    note = self.game.noteMode ? [UIButtonConfiguration filledButtonConfiguration]
-                              : [UIButtonConfiguration tintedButtonConfiguration];
+    UIButtonConfiguration *note = nil;
+    if (self.game.noteMode) {
+        note = [SDKMaterial glassButtonConfigurationProminent:YES];
+        if (!note) note = [UIButtonConfiguration filledButtonConfiguration];
+    } else {
+        note = [SDKMaterial glassButtonConfigurationProminent:NO];
+        if (!note) note = [UIButtonConfiguration tintedButtonConfiguration];
+    }
     UIFont *font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium];
     note.attributedTitle = [[NSAttributedString alloc] initWithString:(self.game.noteMode ? @"笔记中" : @"笔记")
-                                                          attributes:@{ NSFontAttributeName : font }];
+                                                          attributes:@{ NSFontAttributeName : font,
+                                                                        NSForegroundColorAttributeName :
+                                                                            (self.game.noteMode ? [UIColor whiteColor] : [UIColor labelColor]) }];
     note.image = [UIImage systemImageNamed:(self.game.noteMode ? @"pencil.circle.fill" : @"pencil")];
     note.preferredSymbolConfigurationForImage =
         [UIImageSymbolConfiguration configurationWithPointSize:15.0 weight:UIImageSymbolWeightSemibold];
     note.imagePlacement = NSDirectionalRectEdgeTop;
-    note.imagePadding = 2.0;
-    note.cornerStyle = UIButtonConfigurationCornerStyleMedium;
-    note.contentInsets = NSDirectionalEdgeInsetsMake(5.0, 1.0, 5.0, 1.0);
+    note.imagePadding = 3.0;
     self.noteButton.configuration = note;
 }
 
