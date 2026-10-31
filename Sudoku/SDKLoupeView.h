@@ -16,6 +16,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 @property (nonatomic) CGFloat diameter;      // default 132
 @property (nonatomic) CGFloat magnification; // default 2.1
+/// YES while the magnifier is on screen and not fading out.
+@property (nonatomic, readonly, getter=isVisible) BOOL visible;
 
 - (void)showInHost:(UIView *)host
           atCenter:(CGPoint)center

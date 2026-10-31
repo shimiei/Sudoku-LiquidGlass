@@ -1,7 +1,7 @@
 # 数独
 
 一个从零手写的原生 iOS 数独游戏。**Objective-C + UIKit，零第三方依赖，零配置工程**——
-没有 Xcode 工程、没有 CocoaPods、没有 Swift Package，只有 16 个 `.m` + 15 个 `.h`，
+没有 Xcode 工程、没有 CocoaPods、没有 Swift Package，只有 13 个 `.m` + 12 个 `.h`，
 用 `clang + ld64.lld` 就能直接在命令行里编出可安装的 `.ipa`。
 
 界面按 **Apple Human Interface Guidelines** 搭：系统字体、语义色、`UITableView` 的

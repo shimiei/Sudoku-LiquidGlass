@@ -225,7 +225,8 @@
         [UIImageSymbolConfiguration configurationWithPointSize:15.0 weight:UIImageSymbolWeightSemibold];
     c.imagePlacement = NSDirectionalRectEdgeTop;
     c.imagePadding = 3.0;
-    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+    // Fixed size: these sit in a fixed-height toolbar, so they must not grow.
+    UIFont *font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium];
     c.attributedTitle = [[NSAttributedString alloc] initWithString:title
                                                        attributes:@{ NSFontAttributeName : font }];
     c.cornerStyle = UIButtonConfigurationCornerStyleMedium;
@@ -273,10 +274,16 @@
 
     for (NSUInteger i = 0; i < self.numberButtons.count; i++) {
         NSInteger digit = (NSInteger)i + 1;
-        NSInteger remaining = [self.game remainingForValue:digit];
+        NSInteger placedCorrectly = 0;
+        for (NSInteger cell = 0; cell < 81; cell++) {
+            if ([self.game valueAtIndex:cell] == digit && ![self.game isWrongAtIndex:cell]) {
+                placedCorrectly++;
+            }
+        }
+        NSInteger needed = MAX(0, 9 - placedCorrectly);
         UIButton *b = self.numberButtons[i];
-        b.configuration = [self digitConfigurationForDigit:digit remaining:remaining];
-        b.enabled = (remaining > 0);
+        b.configuration = [self digitConfigurationForDigit:digit remaining:needed];
+        b.enabled = (needed > 0);
     }
 
     self.undoButton.enabled = self.game.canUndo;
@@ -285,7 +292,7 @@
     UIButtonConfiguration *note = self.noteButton.configuration;
     note = self.game.noteMode ? [UIButtonConfiguration filledButtonConfiguration]
                               : [UIButtonConfiguration tintedButtonConfiguration];
-    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
+    UIFont *font = [UIFont systemFontOfSize:11.0 weight:UIFontWeightMedium];
     note.attributedTitle = [[NSAttributedString alloc] initWithString:(self.game.noteMode ? @"笔记中" : @"笔记")
                                                           attributes:@{ NSFontAttributeName : font }];
     note.image = [UIImage systemImageNamed:(self.game.noteMode ? @"pencil.circle.fill" : @"pencil")];
@@ -450,6 +457,7 @@
 
 - (void)pauseTapped {
     if (self.game.finished) return;
+    if (self.presentedViewController) return;
     [self stopTimer];
     [self saveGame];
 
@@ -469,7 +477,7 @@
                                             handler:^(UIAlertAction *a) {
         [weakSelf endCurrentGame];
     }]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self presentAlert:alert];
 }
 
 - (void)restartGame {
@@ -536,16 +544,27 @@
                                             handler:^(UIAlertAction *a) {
         [weakSelf.navigationController popToRootViewControllerAnimated:YES];
     }]];
+    [self presentAlert:alert];
+}
+
+/// Presents an alert safely: never while another presentation is in flight.
+- (void)presentAlert:(UIAlertController *)alert {
+    if (self.presentedViewController) {
+        __weak typeof(self) weakSelf = self;
+        [self dismissViewControllerAnimated:NO completion:^{
+            [weakSelf presentViewController:alert animated:YES completion:nil];
+        }];
+        return;
+    }
     [self presentViewController:alert animated:YES completion:nil];
 }
 
 - (void)presentSimpleAlertWithTitle:(NSString *)title message:(NSString *)message {
-    if (self.presentedViewController) return;
     UIAlertController *alert = [UIAlertController alertControllerWithTitle:title
                                                                   message:message
                                                            preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
-    [self presentViewController:alert animated:YES completion:nil];
+    [self presentAlert:alert];
 }
 
 #pragma mark - SDKBoardViewDelegate
@@ -567,7 +586,8 @@
         self.downPoint = p;
         return;
     }
-    if (!self.loupe.superview) {
+    if (!self.loupe) self.loupe = [SDKLoupeView new];
+    if (!self.loupe.isVisible) {
         CGFloat dx = p.x - self.downPoint.x;
         CGFloat dy = p.y - self.downPoint.y;
         if (dx * dx + dy * dy < 100.0) return;   // wait until the finger really moves
@@ -576,8 +596,6 @@
         [self.loupe hide];
         return;
     }
-
-    if (!self.loupe) self.loupe = [SDKLoupeView new];
     CGFloat radius = self.loupe.diameter / 2.0;
     CGFloat gap = 26.0;
     CGFloat minY = self.view.safeAreaInsets.top + 8.0;
@@ -585,7 +603,7 @@
     if (targetY - radius < minY) targetY = p.y + radius + gap;
     CGPoint target = CGPointMake(p.x, targetY);
 
-    if (!self.loupe.superview) {
+    if (!self.loupe.isVisible) {
         [self.loupe showInHost:self.view atCenter:target board:self.board focusIndex:index];
     } else {
         [self.loupe moveToCenter:target board:self.board focusIndex:index];

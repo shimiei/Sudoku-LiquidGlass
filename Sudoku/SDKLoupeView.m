@@ -10,7 +10,7 @@
 @interface SDKLoupeView ()
 @property (nonatomic, weak, nullable) SDKBoardView *board;
 @property (nonatomic) NSInteger focusIndex;
-@property (nonatomic) BOOL visible;
+@property (nonatomic, readwrite) BOOL visible;
 @end
 
 @implementation SDKLoupeView

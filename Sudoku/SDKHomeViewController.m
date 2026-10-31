@@ -170,6 +170,9 @@ typedef NS_ENUM(NSInteger, SDKHomeRowKind) {
             if (played > 0 && best > 0) {
                 content.secondaryText = [NSString stringWithFormat:@"最佳 %@ · 已玩 %ld 局",
                                          [SDKTheme timeString:best], (long)played];
+            } else if (played > 0) {
+                content.secondaryText = [NSString stringWithFormat:@"已玩 %ld 局 · 还没有完成过",
+                                         (long)played];
             } else {
                 content.secondaryText = @"还没玩过，开始第一局";
             }
