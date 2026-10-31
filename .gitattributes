@@ -1,0 +1,11 @@
+# Keep shell scripts and sources LF on every platform (they are built on Linux).
+* text=auto eol=lf
+
+*.sh    text eol=lf
+*.m     text eol=lf
+*.h     text eol=lf
+*.md    text eol=lf
+*.plist text eol=lf
+
+*.png   binary
+*.ipa   binary
