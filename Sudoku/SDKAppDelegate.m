@@ -7,11 +7,13 @@
 #import "SDKStore.h"
 #import "SDKTheme.h"
 #import "SDKHomeViewController.h"
+#import "SDKDiagnostics.h"
 
 @implementation SDKAppDelegate
 
 - (BOOL)application:(UIApplication *)application
 didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    SDKSessionBegin();   // 上次要是崩了，这里会把最后一步记下来
     SDKStore *store = [SDKStore shared];
     [SDKTheme setHapticsEnabled:store.hapticsEnabled];
     [store applyGlobalSideEffects];
@@ -26,10 +28,12 @@ didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
 }
 
 - (void)applicationDidEnterBackground:(UIApplication *)application {
+    SDKSessionEnd();
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 
 - (void)applicationWillTerminate:(UIApplication *)application {
+    SDKSessionEnd();
     [[NSUserDefaults standardUserDefaults] synchronize];
 }
 

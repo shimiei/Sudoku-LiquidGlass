@@ -6,6 +6,7 @@
 #import "SDKCompletionOverlay.h"
 #import "SDKMaterial.h"
 #import "SDKTheme.h"
+#import "SDKDiagnostics.h"
 #import "SDKSudokuEngine.h"
 #import <QuartzCore/QuartzCore.h>
 #import <math.h>
@@ -29,6 +30,7 @@
 @property (nonatomic, strong, nullable) NSArray<UIView *> *animatedPieces;
 @property (nonatomic, copy, nullable) void (^finishHandler)(SDKCompletionAction action);
 @property (nonatomic) BOOL dismissed;
+@property (nonatomic, strong) NSLayoutConstraint *cardSlide;
 @property (nonatomic, strong, nullable) CAEmitterLayer *emitter;
 @end
 
@@ -228,6 +230,8 @@
     // 高度不足时让卡片轻微溢出，而不是打出约束冲突
     verticalTop.priority = 999;
     verticalBottom.priority = 999;
+    // 入场 / 退场只动这一条约束：玻璃视图不能加 transform，也不能改 alpha
+    self.cardSlide = [self.card.centerYAnchor constraintEqualToAnchor:self.centerYAnchor];
     [NSLayoutConstraint activateConstraints:@[
         [self.scrim.leadingAnchor constraintEqualToAnchor:self.leadingAnchor],
         [self.scrim.trailingAnchor constraintEqualToAnchor:self.trailingAnchor],
@@ -240,7 +244,7 @@
         [self.confettiHost.bottomAnchor constraintEqualToAnchor:self.bottomAnchor],
 
         [self.card.centerXAnchor constraintEqualToAnchor:self.centerXAnchor],
-        [self.card.centerYAnchor constraintEqualToAnchor:self.centerYAnchor],
+        self.cardSlide,
         [self.card.widthAnchor constraintLessThanOrEqualToConstant:330.0],
         [self.card.widthAnchor constraintGreaterThanOrEqualToConstant:272.0],
         [self.card.leadingAnchor constraintGreaterThanOrEqualToAnchor:safe.leadingAnchor constant:24.0],
@@ -322,45 +326,62 @@
     self.finishHandler = completion;
     self.frame = host.bounds;
     self.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [host addSubview:self];
 
     BOOL reduceMotion = UIAccessibilityIsReduceMotionEnabled();
 
+    // 玻璃视图（UIVisualEffectView）不适合加 transform、也不适合改 alpha：
+    // 效果会失真，个别系统版本上还会渲染异常。所以入场只动位置约束和内容层。
+    self.card.alpha = 1.0;
     self.scrim.alpha = 0.0;
-    self.card.alpha = reduceMotion ? 0.0 : 1.0;
-    if (!reduceMotion) {
-        self.card.transform = CGAffineTransformConcat(CGAffineTransformMakeScale(0.86, 0.86),
-                                                      CGAffineTransformMakeTranslation(0, 18));
-    }
+    self.cardSlide.constant = reduceMotion ? 0.0 : 26.0;
+    self.contentStack.transform = reduceMotion ? CGAffineTransformIdentity
+                                               : CGAffineTransformMakeScale(0.94, 0.94);
     for (UIView *piece in self.animatedPieces) piece.alpha = 0.0;
+    for (NSInteger i = 0; i < (NSInteger)self.starsRow.arrangedSubviews.count; i++) {
+        UIView *star = self.starsRow.arrangedSubviews[(NSUInteger)i];
+        star.transform = CGAffineTransformIdentity;
+        star.alpha = (i < (NSInteger)self.stars) ? 0.0 : 0.35;
+    }
+    self.alpha = reduceMotion ? 0.0 : 1.0;
+
+    [host addSubview:self];
+    [self layoutIfNeeded];
+    SDKStep(@"overlay.added");
+
+    if (reduceMotion) {
+        for (NSInteger i = 0; i < (NSInteger)self.stars; i++) {
+            ((UIView *)self.starsRow.arrangedSubviews[(NSUInteger)i]).alpha = 1.0;
+        }
+        [UIView animateWithDuration:0.25 animations:^{
+            self.alpha = 1.0;
+            self.scrim.alpha = 1.0;
+            for (UIView *piece in self.animatedPieces) piece.alpha = 1.0;
+        }];
+        SDKStep(@"overlay.shown.reduce-motion");
+        UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, self.titleLabel);
+        return;
+    }
 
     [UIView animateWithDuration:0.25 animations:^{
         self.scrim.alpha = 1.0;
     }];
 
-    if (reduceMotion) {
-        for (NSInteger i = 0; i < (NSInteger)self.starsRow.arrangedSubviews.count; i++) {
-            if (i < self.stars) {
-                ((UIView *)self.starsRow.arrangedSubviews[(NSUInteger)i]).alpha = 1.0;
-            }
-        }
-        [UIView animateWithDuration:0.25 animations:^{
-            self.card.alpha = 1.0;
-            for (UIView *piece in self.animatedPieces) piece.alpha = 1.0;
-        }];
-        UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, self.titleLabel);
-        return;
-    }
-
-    // 卡片：弹簧入场
-    [UIView animateWithDuration:0.62 delay:0.04
-         usingSpringWithDamping:0.72 initialSpringVelocity:0.4
+    // 卡片滑上来，内容同时轻微放大
+    self.cardSlide.constant = 0.0;
+    [UIView animateWithDuration:0.62 delay:0.02
+         usingSpringWithDamping:0.76 initialSpringVelocity:0.35
                         options:UIViewAnimationOptionCurveEaseOut
                      animations:^{
-        self.card.transform = CGAffineTransformIdentity;
+        [self layoutIfNeeded];
+    } completion:nil];
+    [UIView animateWithDuration:0.55 delay:0.04
+         usingSpringWithDamping:0.85 initialSpringVelocity:0.3
+                        options:UIViewAnimationOptionCurveEaseOut
+                     animations:^{
+        self.contentStack.transform = CGAffineTransformIdentity;
     } completion:nil];
 
-    // 内容：逐项浮起
+    // 内容逐项浮起
     NSTimeInterval delay = 0.14;
     for (UIView *piece in self.animatedPieces) {
         piece.transform = CGAffineTransformMakeTranslation(0, 10);
@@ -374,20 +395,15 @@
         delay += 0.055;
     }
 
-    // 星星逐颗弹出来
     [self animateStars];
-
-    // 彩纸（先跑一次布局，否则 confettiHost 还是零尺寸）
-    [self layoutIfNeeded];
     [self emitConfetti];
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.45 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
         [self stopConfetti];
     });
-
-    // 角色轻轻呼吸
     [self startMascotBreathing];
 
+    SDKStep(@"overlay.shown");
     UIAccessibilityPostNotification(UIAccessibilityScreenChangedNotification, self.titleLabel);
 }
 
@@ -432,6 +448,7 @@
         [UIColor colorWithRed:0.55 green:0.80 blue:0.62 alpha:1.0]
     ];
 
+    SDKStep(@"overlay.confetti.begin");
     CAEmitterLayer *emitter = [CAEmitterLayer layer];
     emitter.frame = self.confettiHost.bounds;
     emitter.emitterShape = kCAEmitterLayerLine;
@@ -464,6 +481,7 @@
     emitter.name = @"confetti";
     [self.confettiHost.layer addSublayer:emitter];
     self.emitter = emitter;
+    SDKStep(@"overlay.confetti.ready");
 
     // 粒子落完之后整体移除，别留在图层里
     __weak typeof(self) weakSelf = self;
@@ -526,19 +544,20 @@
         if (handler) handler(action);
     };
 
+    [self stopConfetti];
+    SDKStep(@"overlay.dismiss");
+
     if (UIAccessibilityIsReduceMotionEnabled()) {
-        [self stopConfetti];
         [UIView animateWithDuration:0.18 animations:^{
             self.alpha = 0.0;
         } completion:^(BOOL finished) { finish(); }];
         return;
     }
-    [self stopConfetti];
-    [UIView animateWithDuration:0.22 delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
-        self.card.transform = CGAffineTransformMakeScale(0.92, 0.92);
-        self.card.alpha = 0.0;
+    self.cardSlide.constant = 34.0;
+    [UIView animateWithDuration:0.24 delay:0 options:UIViewAnimationOptionCurveEaseIn animations:^{
+        [self layoutIfNeeded];
+        self.alpha = 0.0;
         self.scrim.alpha = 0.0;
-        self.confettiHost.alpha = 0.0;
     } completion:^(BOOL finished) { finish(); }];
 }
 

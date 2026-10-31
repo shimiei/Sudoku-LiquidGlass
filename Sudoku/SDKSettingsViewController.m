@@ -9,6 +9,7 @@
 #import "SDKSettingsViewController.h"
 #import "SDKStore.h"
 #import "SDKTheme.h"
+#import "SDKDiagnostics.h"
 
 NSString * const kSDKRepositoryURL = @"https://github.com/shimiei/Sudoku-LiquidGlass";
 
@@ -73,7 +74,7 @@ typedef NS_ENUM(NSInteger, SDKSettingsItem) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     if (section == 0) return (NSInteger)SDKSettingsItemCount;
     if (section == 1) return 1;
-    return 2;
+    return [self crashStep] ? 3 : 2;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
@@ -132,9 +133,13 @@ typedef NS_ENUM(NSInteger, SDKSettingsItem) {
         content.secondaryText = [NSString stringWithFormat:@"%@ (%@)",
                                  version.length ? version : @"1.0.0", build.length ? build : @"1"];
         cell.selectionStyle = UITableViewCellSelectionStyleNone;
-    } else {
+    } else if (indexPath.row == 1) {
         content.text = @"开源地址";
         content.secondaryText = @"GitHub";
+        cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+    } else {
+        content.text = @"上次异常退出";
+        content.secondaryText = @"查看详情";
         cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
     }
     cell.contentConfiguration = content;
@@ -148,7 +153,34 @@ typedef NS_ENUM(NSInteger, SDKSettingsItem) {
     } else if (indexPath.section == 2 && indexPath.row == 1) {
         NSURL *url = [NSURL URLWithString:kSDKRepositoryURL];
         if (url) [UIApplication.sharedApplication openURL:url options:@{} completionHandler:nil];
+    } else if (indexPath.section == 2 && indexPath.row == 2) {
+        [self showDiagnostics];
     }
+}
+
+#pragma mark - Diagnostics
+
+- (NSString *)crashStep {
+    NSString *step = SDKLastCrashStep();
+    return step.length > 0 ? step : nil;
+}
+
+- (void)showDiagnostics {
+    NSString *step = [self crashStep];
+    if (!step) return;
+    NSString *message = [NSString stringWithFormat:@"上次异常退出时停在：\n%@\n\n把这一行发给我就能定位。",
+                         step];
+    UIAlertController *alert = [UIAlertController alertControllerWithTitle:@"诊断信息"
+                                                                  message:message
+                                                           preferredStyle:UIAlertControllerStyleAlert];
+    [alert addAction:[UIAlertAction actionWithTitle:@"好" style:UIAlertActionStyleDefault handler:nil]];
+    __weak typeof(self) weakSelf = self;
+    [alert addAction:[UIAlertAction actionWithTitle:@"清除" style:UIAlertActionStyleDestructive
+                                            handler:^(UIAlertAction *a) {
+        SDKClearCrashStep();
+        [weakSelf.tableView reloadData];
+    }]];
+    [self presentViewController:alert animated:YES completion:nil];
 }
 
 #pragma mark - Switch state

@@ -13,6 +13,7 @@
 #import "SDKMaterial.h"
 #import "SDKLoupeView.h"
 #import "SDKStore.h"
+#import "SDKDiagnostics.h"
 #import "SDKTheme.h"
 
 @interface SDKGameViewController () <SDKBoardViewDelegate>
@@ -702,8 +703,14 @@
 - (void)handleCompletion {
     if (self.resultRecorded) return;
     self.resultRecorded = YES;
+    SDKStep(@"completion.begin");
     [self stopTimer];
-    [self.board playCompletionWave];
+    // 庆祝效果再花哨也不能把刚打完的一局带崩：每一步都留面包屑，出错只降级不闪退
+    @try {
+        [self.board playCompletionWave];
+    } @catch (NSException *exception) {
+        SDKStep([NSString stringWithFormat:@"completion.wave:%@", exception.name ?: @"?"]);
+    }
     [SDKTheme notify:UINotificationFeedbackTypeSuccess];
 
     // 先看历史最佳，再写入，才能判断这一局是不是新纪录
@@ -712,24 +719,38 @@
     BOOL isBest = (previousBest == 0 || (self.game.elapsedSeconds > 0 &&
                                          self.game.elapsedSeconds < previousBest));
 
+    SDKStep(@"completion.stats");
     [[SDKStore shared] recordGame:self.game];
     [[SDKStore shared] saveCurrentGame:nil];
+    SDKStep(@"completion.saved");
 
     __weak typeof(self) weakSelf = self;
-    SDKCompletionOverlay *overlay =
-        [[SDKCompletionOverlay alloc] initWithDifficulty:self.game.difficulty
-                                                 seconds:self.game.elapsedSeconds
-                                                mistakes:self.game.mistakes
-                                                   hints:self.game.hintsUsed
-                                                  isBest:isBest];
-    UIView *host = self.navigationController.view ?: self.view;
-    [overlay presentInView:host completion:^(SDKCompletionAction action) {
-        if (action == SDKCompletionActionReplay) {
-            [weakSelf restartGame];
-        } else {
-            [weakSelf.navigationController popToRootViewControllerAnimated:YES];
-        }
-    }];
+    @try {
+        SDKCompletionOverlay *overlay =
+            [[SDKCompletionOverlay alloc] initWithDifficulty:self.game.difficulty
+                                                     seconds:self.game.elapsedSeconds
+                                                    mistakes:self.game.mistakes
+                                                       hints:self.game.hintsUsed
+                                                      isBest:isBest];
+        UIView *host = self.navigationController.view ?: self.view;
+        [overlay presentInView:host completion:^(SDKCompletionAction action) {
+            SDKStep(@"completion.action");
+            if (action == SDKCompletionActionReplay) {
+                [weakSelf restartGame];
+            } else {
+                [weakSelf.navigationController popToRootViewControllerAnimated:YES];
+            }
+        }];
+    } @catch (NSException *exception) {
+        SDKStep([NSString stringWithFormat:@"completion.overlay:%@:%@",
+                 exception.name ?: @"?", exception.reason ?: @""]);
+        // 庆祝层出问题就退回最朴素的提示，至少让这一局有始有终
+        NSString *message = [NSString stringWithFormat:@"用时 %@，失误 %ld 次，提示 %ld 次。",
+                             [SDKTheme timeString:self.game.elapsedSeconds],
+                             (long)self.game.mistakes, (long)self.game.hintsUsed];
+        [self presentSimpleAlertWithTitle:@"完成啦" message:message];
+    }
+    SDKStep(@"completion.done");
 }
 
 /// Presents an alert safely: never while another presentation is in flight.
