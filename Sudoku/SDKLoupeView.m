@@ -51,12 +51,13 @@
     self.board = board;
     self.focusIndex = index;
     self.bounds = CGRectMake(0, 0, self.diameter, self.diameter);
-    self.center = [self clampedCenter:center];
     if (self.superview != host) {
         [self removeFromSuperview];
         [host addSubview:self];
     }
     [host bringSubviewToFront:self];
+    // Clamp after insertion: clampedCenter: needs host bounds via superview.
+    self.center = [self clampedCenter:center];
     [self setNeedsDisplay];
 
     if (!self.visible) {

@@ -154,6 +154,8 @@
     __weak typeof(self) weakSelf = self;
     dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
                    dispatch_get_main_queue(), ^{
+        // Only clear the flash this timer started, never a newer one.
+        if (weakSelf.flashIndex != index) return;
         weakSelf.flashIndex = -1;
         weakSelf.flashColor = nil;
         [weakSelf setNeedsDisplay];

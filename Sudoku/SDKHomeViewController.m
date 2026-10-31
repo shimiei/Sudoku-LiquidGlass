@@ -28,7 +28,8 @@ typedef NS_ENUM(NSInteger, SDKHomeRowKind) {
 
 @interface SDKHomeViewController () <UITableViewDataSource, UITableViewDelegate>
 @property (nonatomic, strong) UITableView *tableView;
-@property (nonatomic, copy) NSArray<SDKHomeRow *> *resumeRows;
+@property (nonatomic, copy) NSArray<NSArray<SDKHomeRow *> *> *sections;
+@property (nonatomic, copy) NSArray<NSString *> *sectionTitles;
 @property (nonatomic, copy) NSArray<SDKHomeRow *> *difficultyRows;
 @property (nonatomic, copy) NSArray<SDKHomeRow *> *moreRows;
 @end
@@ -89,46 +90,51 @@ typedef NS_ENUM(NSInteger, SDKHomeRowKind) {
 
 - (void)refreshContent {
     SDKGameState *current = [[SDKStore shared] currentGame];
-    NSMutableArray<SDKHomeRow *> *rows = [NSMutableArray array];
+    NSMutableArray<NSArray<SDKHomeRow *> *> *sections = [NSMutableArray array];
+    NSMutableArray<NSString *> *titles = [NSMutableArray array];
+
     if (current && !current.finished) {
         SDKHomeRow *resume = [SDKHomeRow new];
         resume.kind = SDKHomeRowKindResume;
         resume.difficulty = current.difficulty;
-        [rows addObject:resume];
+        [sections addObject:@[ resume ]];
+        [titles addObject:@"上一局"];
     }
-    self.resumeRows = rows;
+    [sections addObject:self.difficultyRows];
+    [titles addObject:@"新对局"];
+    [sections addObject:self.moreRows];
+    [titles addObject:@"更多"];
+
+    self.sections = sections;
+    self.sectionTitles = titles;
     [self.tableView reloadData];
 }
 
 #pragma mark - Table
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 3; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return (NSInteger)self.sections.count;
+}
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    switch (section) {
-        case 0: return (NSInteger)self.resumeRows.count;
-        case 1: return (NSInteger)self.difficultyRows.count;
-        default: return (NSInteger)self.moreRows.count;
-    }
+    return (NSInteger)self.sections[(NSUInteger)section].count;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
-    if (section == 0) return self.resumeRows.count ? @"上一局" : nil;
-    if (section == 1) return @"新对局";
-    return @"更多";
+    return self.sectionTitles[(NSUInteger)section];
+}
+
+- (BOOL)isDifficultySection:(NSInteger)section {
+    return self.sections[(NSUInteger)section] == self.difficultyRows;
 }
 
 - (NSString *)tableView:(UITableView *)tableView titleForFooterInSection:(NSInteger)section {
-    if (section != 1) return nil;
+    if (![self isDifficultySection:section]) return nil;
     return @"每局都保证唯一解。对局进度会自动保存，数据只留在这台设备上。";
 }
 
 - (SDKHomeRow *)rowAtIndexPath:(NSIndexPath *)indexPath {
-    switch (indexPath.section) {
-        case 0: return self.resumeRows[(NSUInteger)indexPath.row];
-        case 1: return self.difficultyRows[(NSUInteger)indexPath.row];
-        default: return self.moreRows[(NSUInteger)indexPath.row];
-    }
+    return self.sections[(NSUInteger)indexPath.section][(NSUInteger)indexPath.row];
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {

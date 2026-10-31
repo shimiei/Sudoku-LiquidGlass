@@ -221,9 +221,11 @@
     UIButton *b = [UIButton buttonWithType:UIButtonTypeSystem];
     UIButtonConfiguration *c = [UIButtonConfiguration tintedButtonConfiguration];
     c.image = [UIImage systemImageNamed:symbol];
+    c.preferredSymbolConfigurationForImage =
+        [UIImageSymbolConfiguration configurationWithPointSize:15.0 weight:UIImageSymbolWeightSemibold];
     c.imagePlacement = NSDirectionalRectEdgeTop;
-    c.imagePadding = 2.0;
-    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
+    c.imagePadding = 3.0;
+    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     c.attributedTitle = [[NSAttributedString alloc] initWithString:title
                                                        attributes:@{ NSFontAttributeName : font }];
     c.cornerStyle = UIButtonConfigurationCornerStyleMedium;
@@ -283,10 +285,12 @@
     UIButtonConfiguration *note = self.noteButton.configuration;
     note = self.game.noteMode ? [UIButtonConfiguration filledButtonConfiguration]
                               : [UIButtonConfiguration tintedButtonConfiguration];
-    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption2];
+    UIFont *font = [UIFont preferredFontForTextStyle:UIFontTextStyleCaption1];
     note.attributedTitle = [[NSAttributedString alloc] initWithString:(self.game.noteMode ? @"笔记中" : @"笔记")
                                                           attributes:@{ NSFontAttributeName : font }];
     note.image = [UIImage systemImageNamed:(self.game.noteMode ? @"pencil.circle.fill" : @"pencil")];
+    note.preferredSymbolConfigurationForImage =
+        [UIImageSymbolConfiguration configurationWithPointSize:15.0 weight:UIImageSymbolWeightSemibold];
     note.imagePlacement = NSDirectionalRectEdgeTop;
     note.imagePadding = 2.0;
     note.cornerStyle = UIButtonConfigurationCornerStyleMedium;
