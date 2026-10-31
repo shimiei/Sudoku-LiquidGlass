@@ -1,9 +1,6 @@
 //
 //  SDKBoardView.h
-//  Sudoku — Liquid Glass Edition
-//
-//  The 9x9 grid: everything is drawn with Core Graphics so it stays crisp
-//  and cheap, with a few CALayers on top for the animated selection ring.
+//  Sudoku — Apple HIG rebuild
 //
 
 #import <UIKit/UIKit.h>
@@ -14,33 +11,42 @@ NS_ASSUME_NONNULL_BEGIN
 @class SDKBoardView;
 
 @protocol SDKBoardViewDelegate <NSObject>
-- (void)boardView:(SDKBoardView *)board didSelectIndex:(NSInteger)index;
+- (void)boardView:(SDKBoardView *)boardView didSelectIndex:(NSInteger)index;
 @optional
-- (void)boardView:(SDKBoardView *)board didMoveFingerTo:(CGPoint)point insideBoard:(BOOL)inside;
-- (void)boardViewDidEndTracking:(SDKBoardView *)board;
+- (void)boardView:(SDKBoardView *)boardView
+   didMoveFingerTo:(CGPoint)point
+        cellIndex:(NSInteger)index
+      insideBoard:(BOOL)inside;
+- (void)boardViewDidEndTracking:(SDKBoardView *)boardView;
 @end
 
+/// A plain 9×9 card: system colours, hairline separators, rounded corners.
+/// The same drawing routine also feeds the magnifier, so both stay identical.
 @interface SDKBoardView : UIView
 
-@property (nonatomic, strong, nullable) SDKGameState *game;
-@property (nonatomic, assign) NSInteger selectedIndex;   // -1 = none
 @property (nonatomic, weak, nullable) id<SDKBoardViewDelegate> delegate;
+@property (nonatomic, strong, nullable) SDKGameState *game;
 
-@property (nonatomic, assign) BOOL highlightSameNumbers;
-@property (nonatomic, assign) BOOL highlightPeers;
-@property (nonatomic, assign) BOOL showConflicts;
-@property (nonatomic, assign) BOOL autoCheck;
-@property (nonatomic, assign) CGFloat contentInset;
+@property (nonatomic) NSInteger selectedIndex;   // -1 when nothing is selected
+@property (nonatomic) BOOL highlightSameNumbers;
+@property (nonatomic) BOOL highlightPeers;
+@property (nonatomic) BOOL showConflicts;
+@property (nonatomic) BOOL autoCheck;
+@property (nonatomic) CGFloat contentInset;      // default 6
 
-- (CGRect)rectForCellAtIndex:(NSInteger)index;
-- (nullable NSValue *)cellCenterValueAtIndex:(NSInteger)index;
-- (NSInteger)indexForPoint:(CGPoint)point;
 - (CGFloat)cellSize;
+- (CGRect)gridRect;                              // the 9×9 square inside the card
+- (CGRect)rectForIndex:(NSInteger)index;
+- (CGPoint)centerForIndex:(NSInteger)index;
+- (NSInteger)indexAtPoint:(CGPoint)point;
 
 - (void)reloadData;
-- (void)flashIndex:(NSInteger)index color:(nullable UIColor *)color;
+- (void)flashIndex:(NSInteger)index color:(UIColor *)color;
 - (void)celebrateCompletion;
-- (void)cancelTracking;
+
+/// Draws the whole grid (highlights, rules, digits) into `gridRect` in the given
+/// context's coordinate space. Used by the view itself and by the magnifier.
+- (void)drawGridInRect:(CGRect)gridRect context:(CGContextRef)ctx;
 
 @end
 

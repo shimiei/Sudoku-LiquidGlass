@@ -1,437 +1,299 @@
 //
 //  SDKHistoryViewController.m
-//  Sudoku — Liquid Glass Edition
+//  Sudoku — Apple HIG rebuild
 //
 
 #import "SDKHistoryViewController.h"
-#import "SDKTheme.h"
-#import "SDKGlass.h"
-#import "SDKAuroraView.h"
-#import "SDKBarChartView.h"
 #import "SDKStore.h"
-
-#pragma mark - Record cell
-
-@interface SDKHistoryCell : UITableViewCell
-@property (nonatomic, strong) SDKGlassView *card;
-@property (nonatomic, strong) UILabel *badgeLabel;
-@property (nonatomic, strong) UILabel *dateLabel;
-@property (nonatomic, strong) UILabel *durationLabel;
-@property (nonatomic, strong) UILabel *statusLabel;
-- (void)configureWithRecord:(NSDictionary *)record;
-@end
-
-@implementation SDKHistoryCell
-
-- (instancetype)initWithStyle:(UITableViewCellStyle)style reuseIdentifier:(NSString *)reuseIdentifier {
-    self = [super initWithStyle:style reuseIdentifier:reuseIdentifier];
-    if (self) {
-        self.backgroundColor = [UIColor clearColor];
-        self.contentView.backgroundColor = [UIColor clearColor];
-        self.selectionStyle = UITableViewCellSelectionStyleNone;
-
-        _card = [[SDKGlassView alloc] initWithCornerRadius:20];
-        _card.tintAlpha = 0.06;
-        _card.showsShadow = NO;
-        [self.contentView addSubview:_card];
-
-        _badgeLabel = [UILabel sdk_label:nil font:[SDKTheme roundedFont:12 weight:UIFontWeightBold]
-                                  color:[SDKTheme accent] alignment:NSTextAlignmentCenter];
-        _badgeLabel.backgroundColor = [[SDKTheme accent] colorWithAlphaComponent:0.14];
-        _badgeLabel.layer.cornerRadius = 9;
-        _badgeLabel.layer.masksToBounds = YES;
-        [self.contentView addSubview:_badgeLabel];
-
-        _dateLabel = [UILabel sdk_label:nil font:[SDKTheme roundedFont:12 weight:UIFontWeightMedium]
-                                 color:[SDKTheme textSecondary] alignment:NSTextAlignmentLeft];
-        [self.contentView addSubview:_dateLabel];
-
-        _durationLabel = [UILabel sdk_label:nil font:[SDKTheme monoDigitFont:20 weight:UIFontWeightBold]
-                                     color:[SDKTheme textPrimary] alignment:NSTextAlignmentLeft];
-        [self.contentView addSubview:_durationLabel];
-
-        _statusLabel = [UILabel sdk_label:nil font:[SDKTheme roundedFont:12 weight:UIFontWeightSemibold]
-                                   color:[SDKTheme success] alignment:NSTextAlignmentRight];
-        [self.contentView addSubview:_statusLabel];
-    }
-    return self;
-}
-
-- (void)configureWithRecord:(NSDictionary *)record {
-    NSInteger difficulty = [record[@"difficulty"] integerValue];
-    NSString *title = SDKDifficultyTitle((SDKDifficulty)difficulty);
-    self.badgeLabel.text = title;
-
-    UIColor *tint = [SDKTheme accent];
-    if (difficulty == SDKDifficultyMedium) tint = [SDKTheme accentAlt];
-    if (difficulty == SDKDifficultyHard) tint = [SDKTheme accentWarm];
-    self.badgeLabel.textColor = tint;
-    self.badgeLabel.backgroundColor = [tint colorWithAlphaComponent:0.15];
-
-    NSTimeInterval ts = [record[@"date"] doubleValue];
-    NSDate *date = [NSDate dateWithTimeIntervalSince1970:ts];
-    NSDateFormatter *fmt = [[NSDateFormatter alloc] init];
-    fmt.dateFormat = @"MM月dd日 HH:mm";
-    self.dateLabel.text = [fmt stringFromDate:date];
-
-    self.durationLabel.text = [SDKTheme timeString:[record[@"seconds"] integerValue]];
-
-    BOOL completed = [record[@"completed"] boolValue];
-    if (completed) {
-        NSInteger mistakes = [record[@"mistakes"] integerValue];
-        self.statusLabel.text = mistakes > 0
-            ? [NSString stringWithFormat:@"完成 · 失误 %ld", (long)mistakes]
-            : @"完成 · 完美";
-        self.statusLabel.textColor = [SDKTheme success];
-    } else {
-        double progress = [record[@"progress"] doubleValue];
-        self.statusLabel.text = [NSString stringWithFormat:@"未完成 %ld%%", (long)lround(progress * 100.0)];
-        self.statusLabel.textColor = [SDKTheme textTertiary];
-    }
-    [self setNeedsLayout];
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    CGFloat w = CGRectGetWidth(self.contentView.bounds);
-    CGFloat h = CGRectGetHeight(self.contentView.bounds);
-    self.card.frame = CGRectMake(0, 5, w, h - 10);
-
-    [self.badgeLabel sizeToFit];
-    CGFloat badgeWidth = CGRectGetWidth(self.badgeLabel.bounds) + 18.0;
-    self.badgeLabel.frame = CGRectMake(16, 20, badgeWidth, 20);
-    self.dateLabel.frame = CGRectMake(CGRectGetMaxX(self.badgeLabel.frame) + 10, 20, 140, 20);
-    self.durationLabel.frame = CGRectMake(16, CGRectGetMaxY(self.badgeLabel.frame) + 4, 150, 26);
-    self.statusLabel.frame = CGRectMake(w - 176, CGRectGetMinY(self.durationLabel.frame), 160, 26);
-}
-
-@end
-
-#pragma mark - Controller
+#import "SDKTheme.h"
+#import "SDKBarChartView.h"
 
 @interface SDKHistoryViewController () <UITableViewDataSource, UITableViewDelegate>
 
-@property (nonatomic, assign) SDKHistorySection section;
-@property (nonatomic, strong) SDKAuroraView *aurora;
-@property (nonatomic, strong) SDKGlassButton *backButton;
-@property (nonatomic, strong) UILabel *titleLabel;
-@property (nonatomic, strong) SDKGlassView *segmentGlass;
-@property (nonatomic, strong) SDKGlassButton *recordsTab;
-@property (nonatomic, strong) SDKGlassButton *statsTab;
-
-@property (nonatomic, strong) UITableView *tableView;
-@property (nonatomic, strong) UIScrollView *statsScroll;
-@property (nonatomic, strong) UILabel *emptyLabel;
-@property (nonatomic, strong) NSArray<NSDictionary *> *records;
+@property (nonatomic, strong) UISegmentedControl *segmentedControl;
+@property (nonatomic, strong) UITableView *recordsTable;
+@property (nonatomic, strong) UITableView *statsTable;
+@property (nonatomic, copy) NSArray<NSDictionary *> *records;
+@property (nonatomic) NSInteger initialSection;
 
 @end
 
 @implementation SDKHistoryViewController
 
-- (instancetype)initWithSection:(SDKHistorySection)section {
+- (instancetype)initWithSection:(NSInteger)section {
     self = [super initWithNibName:nil bundle:nil];
     if (self) {
-        _section = section;
+        _initialSection = (section == 1) ? 1 : 0;
+        self.title = @"历史与统计";
     }
     return self;
 }
 
 - (void)viewDidLoad {
     [super viewDidLoad];
-    self.view.backgroundColor = [SDKTheme bgBottom];
 
-    self.aurora = [[SDKAuroraView alloc] initWithFrame:self.view.bounds];
-    self.aurora.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    [self.view addSubview:self.aurora];
-    [self.aurora startAnimating];
+    self.view.backgroundColor = [UIColor systemGroupedBackgroundColor];
 
-    __weak typeof(self) weakSelf = self;
-    self.backButton = [SDKGlassButton circleButtonWithSymbol:@"chevron.left" diameter:42];
-    self.backButton.symbolPointSize = 17;
-    self.backButton.onTap = ^{ [weakSelf.navigationController popViewControllerAnimated:YES]; };
-    [self.view addSubview:self.backButton];
+    self.segmentedControl = [[UISegmentedControl alloc] initWithItems:@[ @"对局记录", @"数据统计" ]];
+    self.segmentedControl.selectedSegmentIndex = self.initialSection;
+    self.segmentedControl.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.segmentedControl addTarget:self action:@selector(sectionChanged)
+                    forControlEvents:UIControlEventValueChanged];
+    [self.view addSubview:self.segmentedControl];
 
-    self.titleLabel = [UILabel sdk_label:@"历史与统计"
-                                    font:[SDKTheme roundedFont:20 weight:UIFontWeightBold]
-                                   color:[SDKTheme textPrimary]
-                               alignment:NSTextAlignmentCenter];
-    [self.view addSubview:self.titleLabel];
+    self.recordsTable = [self makeTable];
+    self.statsTable = [self makeTable];
+    [self.view addSubview:self.recordsTable];
+    [self.view addSubview:self.statsTable];
 
-    self.segmentGlass = [[SDKGlassView alloc] initWithCornerRadius:16];
-    self.segmentGlass.tintAlpha = 0.05;
-    self.segmentGlass.showsShadow = NO;
-    [self.view addSubview:self.segmentGlass];
+    UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
+    [NSLayoutConstraint activateConstraints:@[
+        [self.segmentedControl.topAnchor constraintEqualToAnchor:safe.topAnchor constant:12.0],
+        [self.segmentedControl.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16.0],
+        [self.segmentedControl.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16.0],
 
-    self.recordsTab = [[SDKGlassButton alloc] initWithFrame:CGRectZero];
-    self.recordsTab.titleText = @"对局记录";
-    self.recordsTab.cornerRadius = 13;
-    self.recordsTab.titlePointSize = 13;
-    self.recordsTab.onTap = ^{ [weakSelf switchToSection:SDKHistorySectionRecords]; };
-    [self.segmentGlass addSubview:self.recordsTab];
-    self.segmentGlass.userInteractionEnabled = YES;
+        [self.recordsTable.topAnchor constraintEqualToAnchor:self.segmentedControl.bottomAnchor constant:8.0],
+        [self.recordsTable.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.recordsTable.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.recordsTable.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
 
-    self.statsTab = [[SDKGlassButton alloc] initWithFrame:CGRectZero];
-    self.statsTab.titleText = @"数据统计";
-    self.statsTab.cornerRadius = 13;
-    self.statsTab.titlePointSize = 13;
-    self.statsTab.onTap = ^{ [weakSelf switchToSection:SDKHistorySectionStats]; };
-    [self.segmentGlass addSubview:self.statsTab];
+        [self.statsTable.topAnchor constraintEqualToAnchor:self.segmentedControl.bottomAnchor constant:8.0],
+        [self.statsTable.leadingAnchor constraintEqualToAnchor:self.view.leadingAnchor],
+        [self.statsTable.trailingAnchor constraintEqualToAnchor:self.view.trailingAnchor],
+        [self.statsTable.bottomAnchor constraintEqualToAnchor:self.view.bottomAnchor],
+    ]];
 
-    self.tableView = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];
-    self.tableView.backgroundColor = [UIColor clearColor];
-    self.tableView.separatorStyle = UITableViewCellSeparatorStyleNone;
-    self.tableView.dataSource = self;
-    self.tableView.delegate = self;
-    self.tableView.rowHeight = 86.0;
-    self.tableView.showsVerticalScrollIndicator = NO;
-    self.tableView.contentInset = UIEdgeInsetsMake(6, 0, 24, 0);
-    [self.tableView registerClass:[SDKHistoryCell class] forCellReuseIdentifier:@"record"];
-    [self.view addSubview:self.tableView];
+    [self reloadAll];
+    [self updateVisibility];
+}
 
-    self.emptyLabel = [UILabel sdk_label:@"还没有对局记录\n完成一局后就会出现在这里"
-                                    font:[SDKTheme roundedFont:14 weight:UIFontWeightMedium]
-                                   color:[SDKTheme textTertiary]
-                               alignment:NSTextAlignmentCenter];
-    self.emptyLabel.numberOfLines = 0;
-    [self.view addSubview:self.emptyLabel];
-
-    self.statsScroll = [[UIScrollView alloc] initWithFrame:CGRectZero];
-    self.statsScroll.backgroundColor = [UIColor clearColor];
-    self.statsScroll.showsVerticalScrollIndicator = NO;
-    self.statsScroll.hidden = YES;
-    [self.view addSubview:self.statsScroll];
-
-    [self updateTabsAnimated:NO];
+- (UITableView *)makeTable {
+    UITableView *table = [[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStyleInsetGrouped];
+    table.translatesAutoresizingMaskIntoConstraints = NO;
+    table.dataSource = self;
+    table.delegate = self;
+    table.backgroundColor = [UIColor systemGroupedBackgroundColor];
+    table.rowHeight = UITableViewAutomaticDimension;
+    table.estimatedRowHeight = 60.0;
+    return table;
 }
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
-    [self reloadData];
+    [self reloadAll];
 }
 
-- (UIStatusBarStyle)preferredStatusBarStyle { return UIStatusBarStyleLightContent; }
-
-- (void)reloadData {
-    self.records = [[SDKStore shared] history];
-    [self.tableView reloadData];
-    self.emptyLabel.hidden = (self.records.count > 0) || (self.section != SDKHistorySectionRecords);
-    [self buildStatsContent];
+- (void)reloadAll {
+    NSArray<NSDictionary *> *history = [[SDKStore shared] history];
+    self.records = [history sortedArrayUsingComparator:^NSComparisonResult(NSDictionary *a, NSDictionary *b) {
+        return [b[@"date"] compare:a[@"date"]];
+    }];
+    [self.recordsTable reloadData];
+    [self.statsTable reloadData];
+    [self updateEmptyState];
 }
 
-#pragma mark - Layout
-
-- (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];
-    UIEdgeInsets safe = UIEdgeInsetsZero;
-    if (@available(iOS 11.0, *)) safe = self.view.safeAreaInsets;
-    CGFloat w = CGRectGetWidth(self.view.bounds);
-    CGFloat h = CGRectGetHeight(self.view.bounds);
-    CGFloat margin = (w > 480.0) ? 28.0 : 16.0;
-
-    self.backButton.frame = CGRectMake(margin, safe.top + 6, 42, 42);
-    self.titleLabel.frame = CGRectMake(w / 2 - 100, safe.top + 12, 200, 30);
-
-    CGFloat segWidth = MIN(260.0, w - margin * 2 - 60.0);
-    self.segmentGlass.frame = CGRectMake((w - segWidth) / 2.0, safe.top + 60.0, segWidth, 46.0);
-    CGFloat tabWidth = (segWidth - 8.0) / 2.0;
-    self.recordsTab.frame = CGRectMake(4, 4, tabWidth, 38);
-    self.statsTab.frame = CGRectMake(4 + tabWidth, 4, tabWidth, 38);
-
-    CGFloat contentTop = safe.top + 118.0;
-    CGFloat contentHeight = h - contentTop - safe.bottom - 8.0;
-    self.tableView.frame = CGRectMake(margin, contentTop, w - margin * 2.0, contentHeight);
-    self.emptyLabel.frame = CGRectMake(margin, contentTop + contentHeight / 2.0 - 40.0, w - margin * 2.0, 60);
-    self.statsScroll.frame = CGRectMake(margin, contentTop, w - margin * 2.0, contentHeight);
-    [self layoutStatsCards];
-}
-
-#pragma mark - Tabs
-
-- (void)switchToSection:(SDKHistorySection)section {
-    if (self.section == section) return;
-    self.section = section;
-    [SDKTheme impact:UIImpactFeedbackStyleLight];
-    [self updateTabsAnimated:YES];
-    [SDKTheme selectionTick];
-}
-
-- (void)updateTabsAnimated:(BOOL)animated {
-    self.recordsTab.accentStyle = (self.section == SDKHistorySectionRecords);
-    self.statsTab.accentStyle = (self.section == SDKHistorySectionStats);
-
-    BOOL showRecords = (self.section == SDKHistorySectionRecords);
-    self.tableView.hidden = !showRecords;
-    self.statsScroll.hidden = showRecords;
-    self.emptyLabel.hidden = !(showRecords && self.records.count == 0);
-
-    if (animated) {
-        UIView *shown = showRecords ? self.tableView : self.statsScroll;
-        shown.alpha = 0.0;
-        [UIView animateWithDuration:0.22 animations:^{
-            shown.alpha = 1.0;
-        }];
+- (void)updateEmptyState {
+    if (self.records.count > 0) {
+        self.recordsTable.backgroundView = nil;
+        return;
     }
-    if (!showRecords) [self buildStatsContent];
+    UILabel *label = [UILabel new];
+    label.text = @"还没有对局记录";
+    label.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
+    label.textColor = [UIColor secondaryLabelColor];
+    label.textAlignment = NSTextAlignmentCenter;
+    self.recordsTable.backgroundView = label;
+}
+
+- (void)sectionChanged {
+    [self updateVisibility];
+}
+
+- (void)updateVisibility {
+    BOOL stats = (self.segmentedControl.selectedSegmentIndex == 1);
+    self.recordsTable.hidden = stats;
+    self.statsTable.hidden = !stats;
 }
 
 #pragma mark - Table view
 
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView {
+    return tableView == self.statsTable ? 3 : 1;
+}
+
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
-    return (NSInteger)self.records.count;
+    if (tableView == self.recordsTable) return (NSInteger)self.records.count;
+    if (section == 0) return 4;
+    if (section == 1) return 3;
+    return 1;   // chart
+}
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
+    if (tableView == self.recordsTable) return @"最近的对局";
+    if (section == 0) return @"总览";
+    if (section == 1) return @"分难度";
+    return @"最近七天完成的局数";
+}
+
+- (CGFloat)tableView:(UITableView *)tableView heightForRowAtIndexPath:(NSIndexPath *)indexPath {
+    if (tableView == self.statsTable && indexPath.section == 2) return 170.0;
+    return UITableViewAutomaticDimension;
 }
 
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
-    SDKHistoryCell *cell = [tableView dequeueReusableCellWithIdentifier:@"record" forIndexPath:indexPath];
-    [cell configureWithRecord:self.records[(NSUInteger)indexPath.row]];
+    if (tableView == self.recordsTable) return [self recordCellForRow:indexPath.row];
+    if (indexPath.section == 2) return [self chartCell];
+    return [self statCellForIndexPath:indexPath tableView:tableView];
+}
+
+- (UITableViewCell *)recordCellForRow:(NSInteger)row {
+    static NSString *identifier = @"history.record";
+    UITableViewCell *cell = [self.recordsTable dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    }
+
+    NSDictionary *record = self.records[(NSUInteger)row];
+    SDKDifficulty difficulty = (SDKDifficulty)[record[@"difficulty"] integerValue];
+    NSInteger seconds = [record[@"seconds"] integerValue];
+    NSInteger mistakes = [record[@"mistakes"] integerValue];
+    BOOL completed = [record[@"completed"] boolValue];
+    double progress = [record[@"progress"] doubleValue];
+
+    UIListContentConfiguration *content = [UIListContentConfiguration subtitleCellConfiguration];
+    content.text = [NSString stringWithFormat:@"%@ · %@", SDKDifficultyTitle(difficulty),
+                    [SDKTheme timeString:seconds]];
+
+    static NSDateFormatter *formatter = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        formatter = [NSDateFormatter new];
+        formatter.dateStyle = NSDateFormatterMediumStyle;
+        formatter.timeStyle = NSDateFormatterShortStyle;
+    });
+    NSString *when = [formatter stringFromDate:[NSDate dateWithTimeIntervalSince1970:[record[@"date"] doubleValue]]];
+
+    NSString *status = completed ? @"已完成"
+                                 : [NSString stringWithFormat:@"未完成 %ld%%", (long)lround(progress * 100.0)];
+    content.secondaryText = [NSString stringWithFormat:@"%@ · %@ · 失误 %ld", when, status, (long)mistakes];
+    content.image = [UIImage systemImageNamed:completed ? @"checkmark.circle.fill" : @"circle.dashed"];
+    content.imageProperties.tintColor = completed ? [SDKTheme colorForDifficulty:difficulty]
+                                                  : [UIColor tertiaryLabelColor];
+    cell.contentConfiguration = content;
+    return cell;
+}
+
+- (UITableViewCell *)statCellForIndexPath:(NSIndexPath *)indexPath tableView:(UITableView *)tableView {
+    static NSString *identifier = @"history.stat";
+    UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:identifier];
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+    }
+
+    UIListContentConfiguration *content = [UIListContentConfiguration valueCellConfiguration];
+    NSDictionary *overall = [[SDKStore shared] overallStats];
+
+    if (indexPath.section == 0) {
+        NSInteger played = [overall[@"played"] integerValue];
+        NSInteger completed = [overall[@"completed"] integerValue];
+        NSInteger best = [overall[@"best"] integerValue];
+        NSInteger average = [overall[@"average"] integerValue];
+        switch (indexPath.row) {
+            case 0:
+                content.text = @"总对局";
+                content.secondaryText = [NSString stringWithFormat:@"%ld 局", (long)played];
+                break;
+            case 1:
+                content.text = @"完成";
+                content.secondaryText = played > 0
+                    ? [NSString stringWithFormat:@"%ld 局（%ld%%）", (long)completed,
+                       (long)lround((double)completed / (double)played * 100.0)]
+                    : @"—";
+                break;
+            case 2:
+                content.text = @"最佳用时";
+                content.secondaryText = best > 0 ? [SDKTheme timeString:best] : @"—";
+                break;
+            default:
+                content.text = @"平均用时";
+                content.secondaryText = average > 0 ? [SDKTheme timeString:average] : @"—";
+                break;
+        }
+    } else {
+        SDKDifficulty difficulty = (SDKDifficulty)indexPath.row;
+        NSDictionary *stats = [[SDKStore shared] statsForDifficulty:difficulty];
+        NSInteger played = [stats[@"played"] integerValue];
+        NSInteger best = [stats[@"best"] integerValue];
+        content.text = SDKDifficultyTitle(difficulty);
+        if (played == 0) {
+            content.secondaryText = @"还没玩过";
+        } else if (best > 0) {
+            content.secondaryText = [NSString stringWithFormat:@"最佳 %@ · %ld 局",
+                                     [SDKTheme timeString:best], (long)played];
+        } else {
+            content.secondaryText = [NSString stringWithFormat:@"%ld 局", (long)played];
+        }
+    }
+
+    cell.contentConfiguration = content;
+    return cell;
+}
+
+- (UITableViewCell *)chartCell {
+    static NSString *identifier = @"history.chart";
+    UITableViewCell *cell = [self.statsTable dequeueReusableCellWithIdentifier:identifier];
+    SDKBarChartView *chart = nil;
+    if (!cell) {
+        cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:identifier];
+        cell.selectionStyle = UITableViewCellSelectionStyleNone;
+        chart = [[SDKBarChartView alloc] initWithFrame:CGRectZero];
+        chart.translatesAutoresizingMaskIntoConstraints = NO;
+        chart.tag = 4242;
+        [cell.contentView addSubview:chart];
+        [NSLayoutConstraint activateConstraints:@[
+            [chart.leadingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.leadingAnchor],
+            [chart.trailingAnchor constraintEqualToAnchor:cell.contentView.layoutMarginsGuide.trailingAnchor],
+            [chart.topAnchor constraintEqualToAnchor:cell.contentView.topAnchor constant:10.0],
+            [chart.bottomAnchor constraintEqualToAnchor:cell.contentView.bottomAnchor constant:-10.0],
+        ]];
+    } else {
+        chart = (SDKBarChartView *)[cell.contentView viewWithTag:4242];
+    }
+
+    NSArray<NSNumber *> *values = [[SDKStore shared] completionsForLastDays:7];
+    NSMutableArray<NSString *> *labels = [NSMutableArray array];
+    NSDateFormatter *weekday = [NSDateFormatter new];
+    weekday.dateFormat = @"EEEEE";
+    NSCalendar *calendar = [NSCalendar currentCalendar];
+    for (NSInteger i = 6; i >= 0; i--) {
+        NSDate *day = [calendar dateByAddingUnit:NSCalendarUnitDay value:-i toDate:[NSDate date] options:0];
+        [labels addObject:day ? [weekday stringFromDate:day] : @""];
+    }
+    chart.values = values;
+    chart.labels = labels;
+    chart.barColor = [UIColor systemBlueColor];
     return cell;
 }
 
 - (UISwipeActionsConfiguration *)tableView:(UITableView *)tableView
-        trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath API_AVAILABLE(ios(11.0)) {
-    NSDictionary *record = self.records[(NSUInteger)indexPath.row];
+trailingSwipeActionsConfigurationForRowAtIndexPath:(NSIndexPath *)indexPath API_AVAILABLE(ios(11.0)) {
+    if (tableView != self.recordsTable) return nil;
     __weak typeof(self) weakSelf = self;
-    UIContextualAction *delete =
-        [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
-                                                title:@"删除"
-                                              handler:^(UIContextualAction *action, UIView *sourceView, void (^completion)(BOOL)) {
+    UIContextualAction *delete = [UIContextualAction contextualActionWithStyle:UIContextualActionStyleDestructive
+                                                                         title:@"删除"
+                                                                       handler:^(UIContextualAction *action,
+                                                                                 UIView *sourceView,
+                                                                                 void (^completion)(BOOL)) {
+        NSDictionary *record = weakSelf.records[(NSUInteger)indexPath.row];
         [[SDKStore shared] deleteHistoryEntryWithDate:[record[@"date"] doubleValue]];
-        [weakSelf reloadData];
+        [weakSelf reloadAll];
         completion(YES);
     }];
-    delete.backgroundColor = [SDKTheme danger];
+    delete.image = [UIImage systemImageNamed:@"trash"];
     return [UISwipeActionsConfiguration configurationWithActions:@[ delete ]];
-}
-
-#pragma mark - Statistics
-
-- (void)buildStatsContent {
-    for (UIView *v in self.statsScroll.subviews) [v removeFromSuperview];
-
-    SDKStore *store = [SDKStore shared];
-    NSDictionary *overall = [store overallStats];
-
-    CGFloat width = CGRectGetWidth(self.statsScroll.bounds);
-    if (width < 10) width = CGRectGetWidth(self.view.bounds) - 32.0;
-    CGFloat y = 0.0;
-
-    // ---- summary card
-    SDKGlassView *summary = [[SDKGlassView alloc] initWithCornerRadius:22];
-    summary.tintAlpha = 0.07;
-    summary.showsShadow = NO;
-    summary.frame = CGRectMake(0, y, width, 108);
-    [self.statsScroll addSubview:summary];
-
-    NSArray<NSString *> *titles = @[ @"总对局", @"完成率", @"最佳用时" ];
-    NSInteger played = [overall[@"played"] integerValue];
-    NSInteger best = [overall[@"best"] integerValue];
-    NSArray<NSString *> *values = @[
-        [NSString stringWithFormat:@"%ld", (long)played],
-        played > 0 ? [NSString stringWithFormat:@"%ld%%", (long)lround([overall[@"winRate"] doubleValue] * 100)] : @"--",
-        best > 0 ? [SDKTheme timeString:best] : @"--"
-    ];
-    CGFloat colWidth = width / 3.0;
-    for (NSInteger i = 0; i < 3; i++) {
-        UILabel *value = [UILabel sdk_label:values[(NSUInteger)i]
-                                       font:[SDKTheme monoDigitFont:26 weight:UIFontWeightBold]
-                                      color:[SDKTheme textPrimary]
-                                  alignment:NSTextAlignmentCenter];
-        value.frame = CGRectMake(colWidth * i, 26, colWidth, 34);
-        [summary addSubview:value];
-        UILabel *caption = [UILabel sdk_label:titles[(NSUInteger)i]
-                                        font:[SDKTheme roundedFont:11 weight:UIFontWeightMedium]
-                                       color:[SDKTheme textTertiary]
-                                   alignment:NSTextAlignmentCenter];
-        caption.frame = CGRectMake(colWidth * i, 62, colWidth, 16);
-        [summary addSubview:caption];
-    }
-    y += 108 + 14;
-
-    // ---- per difficulty cards
-    for (NSInteger d = 0; d < 3; d++) {
-        NSDictionary *stats = [store statsForDifficulty:(SDKDifficulty)d];
-        SDKGlassView *card = [[SDKGlassView alloc] initWithCornerRadius:20];
-        card.tintAlpha = 0.06;
-        card.showsShadow = NO;
-        card.frame = CGRectMake(0, y, width, 74);
-        [self.statsScroll addSubview:card];
-
-        UIColor *tint = [SDKTheme accent];
-        if (d == SDKDifficultyMedium) tint = [SDKTheme accentAlt];
-        if (d == SDKDifficultyHard) tint = [SDKTheme accentWarm];
-
-        UIView *dot = [[UIView alloc] initWithFrame:CGRectMake(18, 30, 8, 8)];
-        dot.backgroundColor = tint;
-        dot.layer.cornerRadius = 4;
-        [card addSubview:dot];
-
-        UILabel *name = [UILabel sdk_label:SDKDifficultyTitle((SDKDifficulty)d)
-                                      font:[SDKTheme roundedFont:15 weight:UIFontWeightSemibold]
-                                     color:[SDKTheme textPrimary]
-                                 alignment:NSTextAlignmentLeft];
-        name.frame = CGRectMake(34, 24, 90, 20);
-        [card addSubview:name];
-
-        NSInteger c = [stats[@"completed"] integerValue];
-        NSInteger p = [stats[@"played"] integerValue];
-        UILabel *detail = [UILabel sdk_label:[NSString stringWithFormat:@"完成 %ld / 对局 %ld", (long)c, (long)p]
-                                        font:[SDKTheme roundedFont:11 weight:UIFontWeightMedium]
-                                       color:[SDKTheme textTertiary]
-                                   alignment:NSTextAlignmentLeft];
-        detail.frame = CGRectMake(34, 44, 160, 16);
-        [card addSubview:detail];
-
-        NSInteger cardBest = [stats[@"best"] integerValue];
-        UILabel *bestLabel = [UILabel sdk_label:(cardBest > 0 ? [SDKTheme timeString:cardBest] : @"--")
-                                           font:[SDKTheme monoDigitFont:19 weight:UIFontWeightBold]
-                                          color:tint
-                                      alignment:NSTextAlignmentRight];
-        bestLabel.frame = CGRectMake(width - 130, 20, 112, 24);
-        [card addSubview:bestLabel];
-
-        UILabel *bestCaption = [UILabel sdk_label:@"最佳"
-                                             font:[SDKTheme roundedFont:10 weight:UIFontWeightMedium]
-                                            color:[SDKTheme textTertiary]
-                                        alignment:NSTextAlignmentRight];
-        bestCaption.frame = CGRectMake(width - 130, 44, 112, 14);
-        [card addSubview:bestCaption];
-
-        y += 74 + 10;
-    }
-
-    // ---- 7 day chart
-    SDKGlassView *chartCard = [[SDKGlassView alloc] initWithCornerRadius:22];
-    chartCard.tintAlpha = 0.06;
-    chartCard.showsShadow = NO;
-    chartCard.frame = CGRectMake(0, y, width, 150);
-    [self.statsScroll addSubview:chartCard];
-
-    UILabel *chartTitle = [UILabel sdk_label:@"最近 7 天完成数"
-                                        font:[SDKTheme roundedFont:13 weight:UIFontWeightSemibold]
-                                       color:[SDKTheme textSecondary]
-                                   alignment:NSTextAlignmentLeft];
-    chartTitle.frame = CGRectMake(18, 14, 200, 18);
-    [chartCard addSubview:chartTitle];
-
-    SDKBarChartView *chart = [[SDKBarChartView alloc] initWithFrame:CGRectMake(16, 40, width - 32, 96)];
-    chart.values = [store completionsForLastDays:7];
-    NSMutableArray<NSString *> *labels = [NSMutableArray array];
-    NSCalendar *cal = [NSCalendar currentCalendar];
-    NSDate *today = [cal startOfDayForDate:[NSDate date]];
-    for (NSInteger i = 6; i >= 0; i--) {
-        NSDate *day = [cal dateByAddingUnit:NSCalendarUnitDay value:-i toDate:today options:0];
-        NSDateComponents *comp = [cal components:NSCalendarUnitDay fromDate:day];
-        [labels addObject:[NSString stringWithFormat:@"%ld", (long)comp.day]];
-    }
-    chart.labels = labels;
-    [chartCard addSubview:chart];
-
-    y += 150 + 20;
-    self.statsScroll.contentSize = CGSizeMake(width, y);
-}
-
-- (void)layoutStatsCards {
-    if (self.statsScroll.hidden) return;
-    [self buildStatsContent];
 }
 
 @end

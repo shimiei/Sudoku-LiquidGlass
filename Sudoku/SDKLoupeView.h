@@ -1,37 +1,32 @@
 //
 //  SDKLoupeView.h
-//  Sudoku — Liquid Glass Edition
+//  Sudoku — Apple HIG rebuild
 //
-//  A real magnifier: it re-renders the neighbourhood of the touched cell at
-//  `magnification` scale, clipped to a glass circle, so you can read the cell
-//  under your finger without lifting it.
+//  A real magnifier: it re-draws the grid through the board's own drawing
+//  routine, so the cells under the finger stay vector-crisp at any zoom.
 //
 
 #import <UIKit/UIKit.h>
-#import "SDKGameState.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
+@class SDKBoardView;
+
 @interface SDKLoupeView : UIView
 
-@property (nonatomic, weak, nullable) SDKGameState *game;
-@property (nonatomic, assign) CGFloat magnification;   // default 2.15
-@property (nonatomic, assign) NSInteger focusIndex;    // cell being magnified
-@property (nonatomic, readonly, getter=isVisible) BOOL visible;
+@property (nonatomic) CGFloat diameter;      // default 132
+@property (nonatomic) CGFloat magnification; // default 2.1
 
-- (void)presentInHost:(UIView *)host
-                center:(CGPoint)center
-            boardPoint:(CGPoint)boardPoint
-              cellSize:(CGFloat)cellSize
-                  game:(SDKGameState *)game
-            focusIndex:(NSInteger)focusIndex;
+- (void)showInHost:(UIView *)host
+          atCenter:(CGPoint)center
+             board:(SDKBoardView *)board
+        focusIndex:(NSInteger)index;
 
-- (void)updateCenter:(CGPoint)center
-          boardPoint:(CGPoint)boardPoint
-            cellSize:(CGFloat)cellSize
-          focusIndex:(NSInteger)focusIndex;
+- (void)moveToCenter:(CGPoint)center
+               board:(SDKBoardView *)board
+          focusIndex:(NSInteger)index;
 
-- (void)hideAnimated:(BOOL)animated;
+- (void)hide;
 
 @end
 

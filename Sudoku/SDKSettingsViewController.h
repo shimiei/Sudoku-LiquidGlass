@@ -1,6 +1,6 @@
 //
 //  SDKSettingsViewController.h
-//  Sudoku — Liquid Glass Edition
+//  Sudoku — Apple HIG rebuild
 //
 
 #import <UIKit/UIKit.h>

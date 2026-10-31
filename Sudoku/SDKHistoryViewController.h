@@ -1,20 +1,16 @@
 //
 //  SDKHistoryViewController.h
-//  Sudoku — Liquid Glass Edition
+//  Sudoku — Apple HIG rebuild
 //
 
 #import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
-typedef NS_ENUM(NSInteger, SDKHistorySection) {
-    SDKHistorySectionRecords = 0,
-    SDKHistorySectionStats = 1
-};
-
 @interface SDKHistoryViewController : UIViewController
 
-- (instancetype)initWithSection:(SDKHistorySection)section;
+/// 0 = 对局记录, 1 = 数据统计.
+- (instancetype)initWithSection:(NSInteger)section;
 
 @end
 

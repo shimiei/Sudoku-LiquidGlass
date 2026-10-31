@@ -1,17 +1,18 @@
 //
 //  SDKBarChartView.h
-//  Sudoku — Liquid Glass Edition
+//  Sudoku — Apple HIG rebuild
 //
 
 #import <UIKit/UIKit.h>
 
 NS_ASSUME_NONNULL_BEGIN
 
+/// A small, quiet 7-day bar chart. System tint, no gradients, no glow.
 @interface SDKBarChartView : UIView
 
-@property (nonatomic, copy, nullable) NSArray<NSNumber *> *values;
-@property (nonatomic, copy, nullable) NSArray<NSString *> *labels;
-@property (nonatomic, strong, nullable) UIColor *barColor;
+@property (nonatomic, copy) NSArray<NSNumber *> *values;   // 7 counts, oldest first
+@property (nonatomic, copy) NSArray<NSString *> *labels;   // 7 short labels
+@property (nonatomic, strong) UIColor *barColor;
 
 @end
 

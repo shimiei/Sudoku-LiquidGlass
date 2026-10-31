@@ -1,368 +1,374 @@
 //
 //  SDKBoardView.m
-//  Sudoku — Liquid Glass Edition
+//  Sudoku — Apple HIG rebuild
 //
 
 #import "SDKBoardView.h"
 #import "SDKTheme.h"
+#import <QuartzCore/QuartzCore.h>
 
 @interface SDKBoardView ()
 @property (nonatomic, strong) CAShapeLayer *selectionRing;
-- (void)updateSelectionRingAnimated:(BOOL)animated;
-- (BOOL)cellIsError:(NSInteger)index;
+@property (nonatomic) NSInteger flashIndex;
+@property (nonatomic, strong, nullable) UIColor *flashColor;
 @end
 
-@implementation SDKBoardView {
-    BOOL _tracking;
-}
+@implementation SDKBoardView
 
 - (instancetype)initWithFrame:(CGRect)frame {
     self = [super initWithFrame:frame];
-    if (self) {
-        self.backgroundColor = [UIColor clearColor];
-        self.opaque = NO;
-        self.contentInset = 12.0;
-        _selectedIndex = -1;
-        _highlightSameNumbers = YES;
-        _highlightPeers = YES;
-        _showConflicts = YES;
-        _autoCheck = NO;
-
-        _selectionRing = [CAShapeLayer layer];
-        _selectionRing.fillColor = [UIColor clearColor].CGColor;
-        _selectionRing.strokeColor = [[SDKTheme accent] colorWithAlphaComponent:0.95].CGColor;
-        _selectionRing.lineWidth = 2.0;
-        _selectionRing.opacity = 0.0;
-        _selectionRing.shadowColor = [SDKTheme accent].CGColor;
-        _selectionRing.shadowOpacity = 0.85;
-        _selectionRing.shadowRadius = 7.0;
-        _selectionRing.shadowOffset = CGSizeZero;
-        [self.layer addSublayer:_selectionRing];
-    }
+    if (self) [self commonInit];
     return self;
+}
+
+- (instancetype)initWithCoder:(NSCoder *)coder {
+    self = [super initWithCoder:coder];
+    if (self) [self commonInit];
+    return self;
+}
+
+- (void)commonInit {
+    _contentInset = 6.0;
+    _selectedIndex = -1;
+    _flashIndex = -1;
+    _highlightPeers = YES;
+    _highlightSameNumbers = YES;
+    _showConflicts = YES;
+
+    self.backgroundColor = [SDKTheme boardBackground];
+    self.layer.cornerRadius = 10.0;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+    self.layer.borderWidth = 1.0 / UIScreen.mainScreen.scale;
+    self.layer.borderColor = [SDKTheme cgColor:[SDKTheme gridLine] traits:self.traitCollection];
+
+    self.isAccessibilityElement = YES;
+    self.accessibilityLabel = @"数独棋盘";
+
+    _selectionRing = [CAShapeLayer layer];
+    _selectionRing.fillColor = UIColor.clearColor.CGColor;
+    _selectionRing.strokeColor = [SDKTheme cgColor:[SDKTheme userColor] traits:self.traitCollection];
+    _selectionRing.lineWidth = 2.0;
+    _selectionRing.opacity = 0.0;
+    [self.layer addSublayer:_selectionRing];
 }
 
 #pragma mark - Geometry
 
 - (CGFloat)cellSize {
+    return MAX(1.0, CGRectGetWidth([self gridRect]) / 9.0);
+}
+
+- (CGRect)gridRect {
     CGFloat side = MIN(CGRectGetWidth(self.bounds), CGRectGetHeight(self.bounds)) - self.contentInset * 2.0;
-    return MAX(1.0, side / 9.0);
+    side = MAX(side, 9.0);
+    return CGRectMake((CGRectGetWidth(self.bounds) - side) / 2.0,
+                      (CGRectGetHeight(self.bounds) - side) / 2.0, side, side);
 }
 
-- (CGPoint)gridOrigin {
-    CGFloat side = [self cellSize] * 9.0;
-    return CGPointMake((CGRectGetWidth(self.bounds) - side) / 2.0,
-                       (CGRectGetHeight(self.bounds) - side) / 2.0);
-}
-
-- (CGRect)rectForCellAtIndex:(NSInteger)index {
+- (CGRect)rectForIndex:(NSInteger)index {
     if (index < 0 || index > 80) return CGRectZero;
-    CGFloat s = [self cellSize];
-    CGPoint o = [self gridOrigin];
-    NSInteger row = index / 9, col = index % 9;
-    return CGRectMake(o.x + col * s, o.y + row * s, s, s);
+    CGFloat cell = [self cellSize];
+    CGRect grid = [self gridRect];
+    return CGRectMake(CGRectGetMinX(grid) + (index % 9) * cell,
+                      CGRectGetMinY(grid) + (index / 9) * cell, cell, cell);
 }
 
-- (nullable NSValue *)cellCenterValueAtIndex:(NSInteger)index {
-    if (index < 0 || index > 80) return nil;
-    CGRect r = [self rectForCellAtIndex:index];
-    return [NSValue valueWithCGPoint:CGPointMake(CGRectGetMidX(r), CGRectGetMidY(r))];
+- (CGPoint)centerForIndex:(NSInteger)index {
+    CGRect r = [self rectForIndex:index];
+    return CGPointMake(CGRectGetMidX(r), CGRectGetMidY(r));
 }
 
-- (NSInteger)indexForPoint:(CGPoint)point {
-    CGFloat s = [self cellSize];
-    CGPoint o = [self gridOrigin];
-    CGFloat x = point.x - o.x;
-    CGFloat y = point.y - o.y;
-    if (x < 0 || y < 0 || x >= s * 9.0 || y >= s * 9.0) return -1;
-    NSInteger col = (NSInteger)floor(x / s);
-    NSInteger row = (NSInteger)floor(y / s);
-    col = MAX(0, MIN(8, col));
-    row = MAX(0, MIN(8, row));
-    return row * 9 + col;
+- (NSInteger)indexAtPoint:(CGPoint)point {
+    CGRect grid = [self gridRect];
+    if (!CGRectContainsPoint(CGRectInset(grid, -2.0, -2.0), point)) return -1;
+    CGFloat cell = [self cellSize];
+    NSInteger col = (NSInteger)((point.x - CGRectGetMinX(grid)) / cell);
+    NSInteger row = (NSInteger)((point.y - CGRectGetMinY(grid)) / cell);
+    return MAX(0, MIN(8, row)) * 9 + MAX(0, MIN(8, col));
 }
 
-#pragma mark - State
+#pragma mark - Data
 
 - (void)setGame:(SDKGameState *)game {
     _game = game;
-    self.selectedIndex = -1;
-    [self setNeedsDisplay];
-}
-
-- (void)reloadData {
-    [self setNeedsDisplay];
+    [self reloadData];
 }
 
 - (void)setSelectedIndex:(NSInteger)selectedIndex {
-    if (selectedIndex < -1 || selectedIndex > 80) selectedIndex = -1;
-    BOOL changed = (selectedIndex != _selectedIndex);
+    if (selectedIndex < 0 || selectedIndex > 80) selectedIndex = -1;
+    if (_selectedIndex == selectedIndex) return;
     _selectedIndex = selectedIndex;
+    [self updateSelectionRing];
     [self setNeedsDisplay];
-    if (changed) [self updateSelectionRingAnimated:YES];
 }
 
-- (BOOL)cellIsError:(NSInteger)index {
-    if (!self.game) return NO;
-    if ([self.game valueAtIndex:index] == 0) return NO;
-    if (self.showConflicts && [self.game hasConflictAtIndex:index]) return YES;
-    if (self.autoCheck && [self.game isWrongAtIndex:index]) return YES;
-    return NO;
+- (void)setHighlightPeers:(BOOL)on { _highlightPeers = on; [self setNeedsDisplay]; }
+- (void)setHighlightSameNumbers:(BOOL)on { _highlightSameNumbers = on; [self setNeedsDisplay]; }
+- (void)setShowConflicts:(BOOL)on { _showConflicts = on; [self setNeedsDisplay]; }
+- (void)setAutoCheck:(BOOL)on { _autoCheck = on; [self setNeedsDisplay]; }
+
+- (void)reloadData {
+    [self setNeedsDisplay];
+    [self updateSelectionRing];
 }
 
-#pragma mark - Selection ring
-
-- (void)updateSelectionRingAnimated:(BOOL)animated {
-    if (_selectedIndex < 0) {
-        if (_selectionRing.opacity > 0.01) {
-            CABasicAnimation *fade = [CABasicAnimation animationWithKeyPath:@"opacity"];
-            fade.fromValue = @(_selectionRing.opacity);
-            fade.toValue = @(0.0);
-            fade.duration = 0.16;
-            _selectionRing.opacity = 0.0;
-            [_selectionRing addAnimation:fade forKey:@"fade"];
-        }
-        return;
-    }
-
-    CGRect r = CGRectInset([self rectForCellAtIndex:_selectedIndex], 1.5, 1.5);
-    CGFloat radius = MAX(7.0, [self cellSize] * 0.20);
-    UIBezierPath *bezier = [UIBezierPath bezierPathWithRoundedRect:r cornerRadius:radius];
-
+- (void)layoutSubviews {
+    [super layoutSubviews];
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
-    _selectionRing.lineWidth = MAX(1.6, MIN(2.8, [self cellSize] * 0.045));
-    if (_selectionRing.path != NULL && animated) {
-        CGPathRef oldPath = CGPathCreateCopy(_selectionRing.path);
-        _selectionRing.path = bezier.CGPath;
-        if (oldPath) {
-            CABasicAnimation *anim = [CABasicAnimation animationWithKeyPath:@"path"];
-            anim.fromValue = (__bridge id)oldPath;
-            anim.toValue = (__bridge id)bezier.CGPath;
-            anim.duration = 0.20;
-            anim.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseOut];
-            [_selectionRing addAnimation:anim forKey:@"path"];
-            CGPathRelease(oldPath);
-        }
-    } else {
-        _selectionRing.path = bezier.CGPath;
-    }
-    _selectionRing.opacity = 1.0;
+    [self updateSelectionRing];
     [CATransaction commit];
+}
+
+- (void)updateSelectionRing {
+    if (_selectedIndex < 0) {
+        _selectionRing.opacity = 0.0;
+        return;
+    }
+    CGRect rect = CGRectInset([self rectForIndex:_selectedIndex], 1.5, 1.5);
+    if (CGRectGetWidth(rect) <= 0) {
+        _selectionRing.opacity = 0.0;
+        return;
+    }
+    _selectionRing.path = [UIBezierPath bezierPathWithRoundedRect:rect cornerRadius:3.0].CGPath;
+    _selectionRing.strokeColor = [SDKTheme cgColor:[SDKTheme userColor] traits:self.traitCollection];
+    _selectionRing.opacity = 1.0;
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    if (@available(iOS 13.0, *)) {
+        if (![self.traitCollection hasDifferentColorAppearanceComparedToTraitCollection:previousTraitCollection]) return;
+    }
+    self.layer.borderColor = [SDKTheme cgColor:[SDKTheme gridLine] traits:self.traitCollection];
+    [self updateSelectionRing];
+    [self setNeedsDisplay];
+}
+
+#pragma mark - Flash / celebrate
+
+- (void)flashIndex:(NSInteger)index color:(UIColor *)color {
+    self.flashIndex = index;
+    self.flashColor = color;
+    [self setNeedsDisplay];
+    __weak typeof(self) weakSelf = self;
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.35 * NSEC_PER_SEC)),
+                   dispatch_get_main_queue(), ^{
+        weakSelf.flashIndex = -1;
+        weakSelf.flashColor = nil;
+        [weakSelf setNeedsDisplay];
+    });
+}
+
+- (void)celebrateCompletion {
+    [UIView animateWithDuration:0.12 animations:^{
+        self.transform = CGAffineTransformMakeScale(1.015, 1.015);
+    } completion:^(BOOL finished) {
+        [UIView animateWithDuration:0.3 delay:0 usingSpringWithDamping:0.65 initialSpringVelocity:0.4
+                            options:UIViewAnimationOptionCurveEaseOut animations:^{
+            self.transform = CGAffineTransformIdentity;
+        } completion:nil];
+    }];
 }
 
 #pragma mark - Drawing
 
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    [self updateSelectionRingAnimated:NO];
+- (void)drawRect:(CGRect)rect {
+    CGContextRef ctx = UIGraphicsGetCurrentContext();
+    if (!ctx) return;
+    [self drawGridInRect:[self gridRect] context:ctx];
 }
 
-- (void)drawRect:(CGRect)rect {
-    if (!self.game) return;
-    CGContextRef ctx = UIGraphicsGetCurrentContext();
-    CGFloat s = [self cellSize];
-    if (s < 3.0) return;
+- (void)drawGridInRect:(CGRect)grid context:(CGContextRef)ctx {
+    if (!ctx || CGRectGetWidth(grid) < 9.0) return;
 
-    CGPoint o = [self gridOrigin];
-    CGRect gridRect = CGRectMake(o.x, o.y, s * 9.0, s * 9.0);
-    NSInteger sel = self.selectedIndex;
-    NSInteger selValue = (sel >= 0) ? [self.game valueAtIndex:sel] : 0;
+    UITraitCollection *traits = self.traitCollection;
+    SDKGameState *game = self.game;
+    CGFloat cell = CGRectGetWidth(grid) / 9.0;
+    CGFloat hairline = 1.0 / UIScreen.mainScreen.scale;
 
-    // Soft wash behind the grid.
-    [[UIColor colorWithWhite:1.0 alpha:0.025] setFill];
-    CGContextFillRect(ctx, gridRect);
-
-    // ---- highlights -------------------------------------------------------
-    UIColor *peerColor = [SDKTheme cellPeer];
-    UIColor *sameColor = [SDKTheme cellSame];
-    UIColor *errorColor = [SDKTheme cellError];
-
-    for (NSInteger i = 0; i < 81; i++) {
-        if (i == sel) continue;
-        BOOL peer = NO, same = NO;
-        if (sel >= 0) {
-            if (self.highlightPeers && [self.game isPeerRowOfIndex:sel andIndex:i]) peer = YES;
-            if (self.highlightSameNumbers && selValue != 0 && [self.game valueAtIndex:i] == selValue) same = YES;
-        }
-        BOOL error = [self cellIsError:i];
-        if (!peer && !same && !error) continue;
-        CGRect cellRect = [self rectForCellAtIndex:i];
-        if (peer) { [peerColor setFill]; CGContextFillRect(ctx, cellRect); }
-        if (same) { [sameColor setFill]; CGContextFillRect(ctx, cellRect); }
-        if (error) { [errorColor setFill]; CGContextFillRect(ctx, cellRect); }
+    NSInteger selRow = -1, selCol = -1, selValue = 0;
+    if (self.selectedIndex >= 0 && game) {
+        selRow = self.selectedIndex / 9;
+        selCol = self.selectedIndex % 9;
+        selValue = [game valueAtIndex:self.selectedIndex];
     }
 
-    if (sel >= 0) {
-        [[SDKTheme cellSelect] setFill];
-        CGContextFillRect(ctx, [self rectForCellAtIndex:sel]);
-        if ([self cellIsError:sel]) {
-            [[[SDKTheme danger] colorWithAlphaComponent:0.18] setFill];
-            CGContextFillRect(ctx, [self rectForCellAtIndex:sel]);
-        }
-    }
+    // 1 — cell backgrounds
+    if (game) {
+        for (NSInteger i = 0; i < 81; i++) {
+            NSInteger row = i / 9, col = i % 9;
+            NSInteger value = [game valueAtIndex:i];
+            UIColor *fill = nil;
 
-    // ---- grid lines -------------------------------------------------------
-    CGContextSetLineCap(ctx, kCGLineCapButt);
-    UIColor *thin = [SDKTheme gridLine];
-    UIColor *thick = [SDKTheme gridLineStrong];
+            if (self.selectedIndex >= 0) {
+                if (i == self.selectedIndex) {
+                    fill = [SDKTheme selectFill];
+                } else if (self.highlightPeers &&
+                           (row == selRow || col == selCol ||
+                            (row / 3 == selRow / 3 && col / 3 == selCol / 3))) {
+                    fill = [SDKTheme peerFill];
+                }
+                if (!fill && self.highlightSameNumbers && selValue > 0 && value == selValue) {
+                    fill = [SDKTheme sameFill];
+                }
+            }
 
-    for (NSInteger i = 0; i <= 9; i++) {
-        BOOL isBox = (i % 3 == 0);
-        CGFloat width = isBox ? 1.7 : 0.75;
-        CGContextSetStrokeColorWithColor(ctx, (isBox ? thick : thin).CGColor);
-        CGContextSetLineWidth(ctx, width);
+            if (i == self.flashIndex && self.flashColor) {
+                fill = self.flashColor;
+            } else if (value > 0 && ![game isGivenAtIndex:i]) {
+                if ((self.autoCheck && [game isWrongAtIndex:i]) ||
+                    (self.showConflicts && [game hasConflictAtIndex:i])) {
+                    fill = [SDKTheme errorFill];
+                }
+            }
 
-        CGFloat x = o.x + s * i;
-        CGFloat y = o.y + s * i;
-        // Vertical
-        CGContextMoveToPoint(ctx, x, o.y);
-        CGContextAddLineToPoint(ctx, x, o.y + s * 9.0);
-        CGContextStrokePath(ctx);
-        // Horizontal
-        CGContextMoveToPoint(ctx, o.x, y);
-        CGContextAddLineToPoint(ctx, o.x + s * 9.0, y);
-        CGContextStrokePath(ctx);
-    }
-
-    // ---- digits -----------------------------------------------------------
-    UIFont *givenFont = [SDKTheme roundedFont:s * 0.56 weight:UIFontWeightBold];
-    UIFont *userFont = [SDKTheme roundedFont:s * 0.54 weight:UIFontWeightMedium];
-    UIFont *noteFont = [SDKTheme roundedFont:s * 0.215 weight:UIFontWeightSemibold];
-
-    UIColor *givenColor = [SDKTheme givenText];
-    UIColor *userColor = [SDKTheme userText];
-    UIColor *errorTextColor = [SDKTheme errorText];
-    UIColor *noteColor = [SDKTheme noteText];
-
-    NSMutableParagraphStyle *para = [[NSParagraphStyle defaultParagraphStyle] mutableCopy];
-    para.alignment = NSTextAlignmentCenter;
-
-    for (NSInteger i = 0; i < 81; i++) {
-        CGRect cellRect = [self rectForCellAtIndex:i];
-        NSInteger v = [self.game valueAtIndex:i];
-
-        if (v > 0) {
-            BOOL given = [self.game isGivenAtIndex:i];
-            BOOL error = [self cellIsError:i];
-            UIFont *font = given ? givenFont : userFont;
-            UIColor *color = error ? errorTextColor : (given ? givenColor : userColor);
-            NSDictionary *attrs = @{ NSFontAttributeName: font,
-                                     NSForegroundColorAttributeName: color,
-                                     NSParagraphStyleAttributeName: para };
-            NSString *str = [NSString stringWithFormat:@"%ld", (long)v];
-            CGSize size = [str sizeWithAttributes:attrs];
-            CGRect textRect = CGRectMake(CGRectGetMidX(cellRect) - size.width / 2.0,
-                                         CGRectGetMidY(cellRect) - size.height / 2.0,
-                                         size.width, size.height);
-            [str drawInRect:textRect withAttributes:attrs];
-        } else if ([self.game isEditableAtIndex:i]) {
-            NSUInteger mask = [self.game noteMaskAtIndex:i];
-            if (mask == 0) continue;
-            NSDictionary *attrs = @{ NSFontAttributeName: noteFont,
-                                     NSForegroundColorAttributeName: noteColor,
-                                     NSParagraphStyleAttributeName: para };
-            CGFloat third = s / 3.0;
-            for (NSInteger d = 1; d <= 9; d++) {
-                if ((mask & (1u << (NSUInteger)(d - 1))) == 0) continue;
-                NSInteger nr = (d - 1) / 3, nc = (d - 1) % 3;
-                CGRect mini = CGRectMake(CGRectGetMinX(cellRect) + nc * third,
-                                         CGRectGetMinY(cellRect) + nr * third,
-                                         third, third);
-                NSString *str = [NSString stringWithFormat:@"%ld", (long)d];
-                CGSize size = [str sizeWithAttributes:attrs];
-                [str drawInRect:CGRectMake(CGRectGetMidX(mini) - size.width / 2.0,
-                                           CGRectGetMidY(mini) - size.height / 2.0,
-                                           size.width, size.height)
-                 withAttributes:attrs];
+            if (fill) {
+                CGContextSetFillColorWithColor(ctx, [SDKTheme cgColor:fill traits:traits]);
+                CGContextFillRect(ctx, CGRectMake(CGRectGetMinX(grid) + col * cell,
+                                                  CGRectGetMinY(grid) + row * cell, cell, cell));
             }
         }
     }
-}
 
-#pragma mark - Effects
+    // 2 — hairline rules
+    CGContextSetLineWidth(ctx, hairline);
+    CGContextSetStrokeColorWithColor(ctx, [SDKTheme cgColor:[SDKTheme gridLine] traits:traits]);
+    for (NSInteger i = 1; i < 9; i++) {
+        if (i % 3 == 0) continue;
+        CGFloat x = CGRectGetMinX(grid) + i * cell;
+        CGFloat y = CGRectGetMinY(grid) + i * cell;
+        CGContextMoveToPoint(ctx, x, CGRectGetMinY(grid));
+        CGContextAddLineToPoint(ctx, x, CGRectGetMaxY(grid));
+        CGContextMoveToPoint(ctx, CGRectGetMinX(grid), y);
+        CGContextAddLineToPoint(ctx, CGRectGetMaxX(grid), y);
+    }
+    CGContextStrokePath(ctx);
 
-- (void)flashIndex:(NSInteger)index color:(UIColor *)color {
-    if (index < 0 || index > 80) return;
-    CGRect cellRect = CGRectInset([self rectForCellAtIndex:index], 1.0, 1.0);
-    CALayer *flash = [CALayer layer];
-    flash.frame = cellRect;
-    flash.cornerRadius = [self cellSize] * 0.18;
-    flash.backgroundColor = [(color ?: [SDKTheme accent]) colorWithAlphaComponent:0.55].CGColor;
-    flash.opacity = 0.0;
-    [self.layer addSublayer:flash];
+    // 3 — box rules and outer border
+    CGContextSetLineWidth(ctx, MAX(1.0, cell * 0.045));
+    CGContextSetStrokeColorWithColor(ctx, [SDKTheme cgColor:[SDKTheme boxLine] traits:traits]);
+    for (NSInteger i = 3; i < 9; i += 3) {
+        CGFloat x = CGRectGetMinX(grid) + i * cell;
+        CGFloat y = CGRectGetMinY(grid) + i * cell;
+        CGContextMoveToPoint(ctx, x, CGRectGetMinY(grid));
+        CGContextAddLineToPoint(ctx, x, CGRectGetMaxY(grid));
+        CGContextMoveToPoint(ctx, CGRectGetMinX(grid), y);
+        CGContextAddLineToPoint(ctx, CGRectGetMaxX(grid), y);
+    }
+    CGContextStrokePath(ctx);
+    CGContextStrokeRect(ctx, CGRectInset(grid, cell * 0.015, cell * 0.015));
 
-    CAKeyframeAnimation *anim = [CAKeyframeAnimation animationWithKeyPath:@"opacity"];
-    anim.values = @[ @0.0, @0.85, @0.0 ];
-    anim.keyTimes = @[ @0.0, @0.22, @1.0 ];
-    anim.duration = 0.60;
-    anim.timingFunction = [CAMediaTimingFunction functionWithName:kCAMediaTimingFunctionEaseInEaseOut];
+    if (!game) return;
 
-    [CATransaction begin];
-    [CATransaction setCompletionBlock:^{
-        [flash removeFromSuperlayer];
-    }];
-    [flash addAnimation:anim forKey:@"flash"];
-    [CATransaction commit];
-}
+    // 4 — digits and pencil notes
+    UIFont *valueFont = [SDKTheme digitsFontOfSize:cell * 0.58 weight:UIFontWeightSemibold];
+    UIFont *noteFont = [SDKTheme digitsFontOfSize:cell * 0.22 weight:UIFontWeightRegular];
+    NSMutableParagraphStyle *center = [NSMutableParagraphStyle new];
+    center.alignment = NSTextAlignmentCenter;
 
-- (void)celebrateCompletion {
-    NSArray<UIColor *> *palette = @[ [SDKTheme accent], [SDKTheme accentAlt], [SDKTheme success], [SDKTheme gold] ];
     for (NSInteger i = 0; i < 81; i++) {
-        NSInteger row = i / 9, col = i % 9;
-        NSTimeInterval delay = (row + col) * 0.035;
-        UIColor *color = palette[(NSUInteger)((row + col) % (NSInteger)palette.count)];
-        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(delay * NSEC_PER_SEC)),
-                       dispatch_get_main_queue(), ^{
-            [self flashIndex:i color:color];
-        });
+        CGRect r = CGRectMake(CGRectGetMinX(grid) + (i % 9) * cell,
+                              CGRectGetMinY(grid) + (i / 9) * cell, cell, cell);
+        NSInteger value = [game valueAtIndex:i];
+
+        if (value > 0) {
+            BOOL isGiven = [game isGivenAtIndex:i];
+            BOOL wrong = NO;
+            if (!isGiven) {
+                if (self.autoCheck && [game isWrongAtIndex:i]) wrong = YES;
+                else if (self.showConflicts && [game hasConflictAtIndex:i]) wrong = YES;
+            }
+            UIColor *color = isGiven ? [SDKTheme givenColor]
+                                     : (wrong ? [SDKTheme errorColor] : [SDKTheme userColor]);
+            NSString *text = [NSString stringWithFormat:@"%ld", (long)value];
+            NSDictionary *attrs = @{ NSFontAttributeName : valueFont,
+                                     NSForegroundColorAttributeName : color,
+                                     NSParagraphStyleAttributeName : center };
+            CGSize size = [text sizeWithAttributes:attrs];
+            [text drawInRect:CGRectMake(CGRectGetMidX(r) - size.width / 2.0,
+                                        CGRectGetMidY(r) - size.height / 2.0,
+                                        size.width, size.height)
+              withAttributes:attrs];
+            continue;
+        }
+
+        unsigned mask = [game noteMaskAtIndex:i];
+        if (!mask) continue;
+        NSDictionary *attrs = @{ NSFontAttributeName : noteFont,
+                                 NSForegroundColorAttributeName : [SDKTheme noteColor],
+                                 NSParagraphStyleAttributeName : center };
+        CGFloat sub = cell / 3.0;
+        for (NSInteger d = 1; d <= 9; d++) {
+            if (!(mask & (1u << (NSUInteger)(d - 1)))) continue;
+            CGRect noteRect = CGRectMake(CGRectGetMinX(r) + ((d - 1) % 3) * sub,
+                                         CGRectGetMinY(r) + ((d - 1) / 3) * sub, sub, sub);
+            NSString *text = [NSString stringWithFormat:@"%ld", (long)d];
+            CGSize size = [text sizeWithAttributes:attrs];
+            [text drawInRect:CGRectMake(CGRectGetMidX(noteRect) - size.width / 2.0,
+                                        CGRectGetMidY(noteRect) - size.height / 2.0,
+                                        size.width, size.height)
+              withAttributes:attrs];
+        }
     }
 }
 
-#pragma mark - Touch handling
+#pragma mark - Touches
+
+- (void)reportTrackingWithPoint:(CGPoint)point index:(NSInteger)index {
+    if ([self.delegate respondsToSelector:@selector(boardView:didMoveFingerTo:cellIndex:insideBoard:)]) {
+        [self.delegate boardView:self didMoveFingerTo:point cellIndex:index
+                     insideBoard:CGRectContainsPoint(self.bounds, point)];
+    }
+}
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    CGPoint p = [touches.anyObject locationInView:self];
-    _tracking = YES;
-    NSInteger index = [self indexForPoint:p];
+    UITouch *touch = touches.anyObject;
+    if (!touch) return;
+    CGPoint point = [touch locationInView:self];
+    NSInteger index = [self indexAtPoint:point];
     if (index >= 0) {
         self.selectedIndex = index;
-        [self.delegate boardView:self didSelectIndex:index];
+        [SDKTheme selection];
+        if ([self.delegate respondsToSelector:@selector(boardView:didSelectIndex:)]) {
+            [self.delegate boardView:self didSelectIndex:index];
+        }
     }
-    if ([self.delegate respondsToSelector:@selector(boardView:didMoveFingerTo:insideBoard:)]) {
-        [self.delegate boardView:self didMoveFingerTo:p insideBoard:(index >= 0)];
-    }
+    [self reportTrackingWithPoint:point index:index];
 }
 
 - (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    CGPoint p = [touches.anyObject locationInView:self];
-    NSInteger index = [self indexForPoint:p];
-    if (index >= 0 && index != _selectedIndex) {
-        self.selectedIndex = index;
-        [self.delegate boardView:self didSelectIndex:index];
-        [SDKTheme selectionTick];
-    }
-    if ([self.delegate respondsToSelector:@selector(boardView:didMoveFingerTo:insideBoard:)]) {
-        [self.delegate boardView:self didMoveFingerTo:p insideBoard:(index >= 0)];
-    }
+    UITouch *touch = touches.anyObject;
+    if (!touch) return;
+    CGPoint point = [touch locationInView:self];
+    NSInteger index = [self indexAtPoint:point];
+    if (index >= 0 && index != self.selectedIndex) self.selectedIndex = index;
+    [self reportTrackingWithPoint:point index:index];
 }
 
 - (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    _tracking = NO;
     if ([self.delegate respondsToSelector:@selector(boardViewDidEndTracking:)]) {
         [self.delegate boardViewDidEndTracking:self];
     }
 }
 
 - (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
-    _tracking = NO;
     if ([self.delegate respondsToSelector:@selector(boardViewDidEndTracking:)]) {
         [self.delegate boardViewDidEndTracking:self];
     }
 }
 
-- (void)cancelTracking {
-    _tracking = NO;
+#pragma mark - Accessibility
+
+- (NSString *)accessibilityValue {
+    if (!self.game || self.selectedIndex < 0) return @"";
+    NSInteger value = [self.game valueAtIndex:self.selectedIndex];
+    NSInteger row = self.selectedIndex / 9 + 1;
+    NSInteger col = self.selectedIndex % 9 + 1;
+    if (value > 0) {
+        return [NSString stringWithFormat:@"第 %ld 行第 %ld 列，数字 %ld", (long)row, (long)col, (long)value];
+    }
+    return [NSString stringWithFormat:@"第 %ld 行第 %ld 列，空", (long)row, (long)col];
 }
 
 @end
